@@ -62,9 +62,13 @@ Beta 阶段按内部 Android 发版与接入说明验证。正式对外发布前
 
 ## 仓库内容
 
-- `main`：通过发布 PR 同步的当前插件源码，用于审查和追溯。
-- Git tag：指向对应版本源码在 `main` 上的合入提交。
-- Release：提供分模块 zip 和 `checksums.txt`，是 SDK 安装产物的下载入口。
+- `main`：已发布版本的插件源码，手动发布 Release 后由同步任务更新，用于审查和追溯。
+- Git tag：指向对应版本的固定源码快照；创建草稿时生成，发布后不移动。
+- Release：CI 创建草稿，维护者检查后手动发布；提供分模块 zip 和 `checksums.txt`。
 - `release-manifest.json`：记录 SDK 版本、monorepo 源码提交、支持的引擎版本及模块校验值。
 
-打 tag 或删除 Release 都不会自动修改 `main`。源码变更和撤版后的源码恢复必须通过 PR 完成。
+打 tag 或删除 Release 都不会自动修改 `main`。发布 Release 后才同步该版本源码；
+撤版后的源码恢复需单独提交变更。
+
+`.github/workflows/sync-published-release.yml` 与 `.github/scripts/ue5/` 是一次性初始化的
+同步任务。后续 SDK 发版保留这些文件，任务自身的更新单独通过维护 PR 合入。

@@ -1,0 +1,89 @@
+# Initialized on tapsdk-ue5-dist main once; release branches and tags inherit this workflow.
+name: Sync Published UE5 Release
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: '已发布的 UE5 版本 Tag（用于重试同步）'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ue5-dist-main-sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Resolve release tag
+        id: release
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name || inputs.tag }}
+        run: |
+          if ! [[ "$RELEASE_TAG" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.]+)?$ ]]; then
+            echo "::error::Invalid UE5 release tag"
+            exit 1
+          fi
+          echo "tag=$RELEASE_TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Generate publisher token
+        id: app-token
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ vars.TAPSDK_RELEASE_APP_ID }}
+          private-key: ${{ secrets.TAPSDK_RELEASE_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: tapsdk-ue5-dist
+
+      - name: Checkout published source snapshot
+        uses: actions/checkout@v6
+        with:
+          ref: refs/tags/${{ steps.release.outputs.tag }}
+          path: snapshot
+          lfs: true
+          token: ${{ steps.app-token.outputs.token }}
+
+      - name: Checkout main
+        uses: actions/checkout@v6
+        with:
+          ref: main
+          path: current
+          lfs: true
+          token: ${{ steps.app-token.outputs.token }}
+
+      - name: Validate Release and synchronize main
+        id: sync
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          TARGET_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ steps.release.outputs.tag }}
+        run: |
+          python3 snapshot/.github/scripts/ue5/sync_published_release.py \
+            --snapshot snapshot --target current --tag "$RELEASE_TAG" --repo "$TARGET_REPO"
+
+      - name: Save published SDK history
+        if: ${{ steps.sync.outputs.is_public == 'true' && !startsWith(steps.release.outputs.tag, '0.0.0') }}
+        env:
+          HISTORY_HOST: ${{ vars[format('HISTORY_HOST_{0}', fromJSON(steps.sync.outputs.history).history_env)] }}
+          HISTORY_CRYPTO_SECRET: ${{ secrets[format('HISTORY_CRYPTO_SECRET_{0}', fromJSON(steps.sync.outputs.history).history_env)] }}
+          INPUT_HISTORY_TYPE: sdk
+          INPUT_TRIGGER: ${{ fromJSON(steps.sync.outputs.history).trigger }}
+          INPUT_SDK_VER: ${{ steps.release.outputs.tag }}
+          INPUT_SDK_TYPE: '3'
+          INPUT_IS_PUBLIC: '1'
+          INPUT_URL: https://github.com/${{ github.repository }}/releases/tag/${{ steps.release.outputs.tag }}
+          INPUT_SIZE: ${{ fromJSON(steps.sync.outputs.history).size }}
+        run: |
+          if [ -z "$HISTORY_HOST" ] || [ -z "$HISTORY_CRYPTO_SECRET" ]; then
+            echo "::warning::main 已同步，但 dist 未配置发布历史服务，跳过历史记录"
+            exit 0
+          fi
+          python3 snapshot/.github/scripts/ue5/save-history.py
