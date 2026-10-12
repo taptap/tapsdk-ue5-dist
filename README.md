@@ -72,3 +72,5 @@ Beta 阶段按内部 Android 发版与接入说明验证。正式对外发布前
 
 `.github/workflows/sync-published-release.yml` 与 `.github/scripts/ue5/` 是一次性初始化的
 同步任务。后续 SDK 发版保留这些文件，任务自身的更新单独通过维护 PR 合入。
+同步与历史脚本从 `main` 读取，版本 Tag 只提供该版本的源码与发布上下文。
+补发低于 `main` 的版本时只跳过源码回退，公开版本的发布历史仍记录。

@@ -125,7 +125,8 @@ def main() -> None:
         else:
             print('main already matches the published source; no commit needed')
     output_path = os.environ.get('GITHUB_OUTPUT')
-    if output_path and changed:
+    # A published older version still needs history, even when main cannot be downgraded.
+    if output_path:
         context = json.loads((snapshot / '.github/ue5-release-context.json').read_text())
         if context['history_env'] not in ('RND', 'PROD'):
             raise ValidationError('invalid history environment')

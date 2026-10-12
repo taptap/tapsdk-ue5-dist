@@ -36,7 +36,7 @@ jobs:
 
       - name: Generate publisher token
         id: app-token
-        uses: actions/create-github-app-token@v3
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
         with:
           client-id: ${{ vars.TAPSDK_RELEASE_APP_ID }}
           private-key: ${{ secrets.TAPSDK_RELEASE_APP_PRIVATE_KEY }}
@@ -44,7 +44,7 @@ jobs:
           repositories: tapsdk-ue5-dist
 
       - name: Checkout published source snapshot
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           ref: refs/tags/${{ steps.release.outputs.tag }}
           path: snapshot
@@ -52,7 +52,7 @@ jobs:
           token: ${{ steps.app-token.outputs.token }}
 
       - name: Checkout main
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           ref: main
           path: current
@@ -66,7 +66,7 @@ jobs:
           TARGET_REPO: ${{ github.repository }}
           RELEASE_TAG: ${{ steps.release.outputs.tag }}
         run: |
-          python3 snapshot/.github/scripts/ue5/sync_published_release.py \
+          python3 current/.github/scripts/ue5/sync_published_release.py \
             --snapshot snapshot --target current --tag "$RELEASE_TAG" --repo "$TARGET_REPO"
 
       - name: Save published SDK history
@@ -83,7 +83,7 @@ jobs:
           INPUT_SIZE: ${{ fromJSON(steps.sync.outputs.history).size }}
         run: |
           if [ -z "$HISTORY_HOST" ] || [ -z "$HISTORY_CRYPTO_SECRET" ]; then
-            echo "::warning::main 已同步，但 dist 未配置发布历史服务，跳过历史记录"
+            echo "::warning::dist 未配置发布历史服务，跳过历史记录"
             exit 0
           fi
-          python3 snapshot/.github/scripts/ue5/save-history.py
+          python3 current/.github/scripts/ue5/save-history.py
