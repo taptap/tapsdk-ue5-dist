@@ -1,0 +1,23 @@
+{
+	"FileVersion": 3,
+	"Version": 1,
+	"VersionName": "4.11.0-beta.3",
+	"FriendlyName": "TapUpdate",
+	"Description": "TapSDK Update module (Android only - triggers update UI via TapTap)",
+	"Category": "TapSDK",
+	"CreatedBy": "TapTap",
+	"CanContainContent": false,
+	"Modules": [
+		{
+			"Name": "TapUpdate",
+			"Type": "Runtime",
+			"LoadingPhase": "Default"
+		}
+	],
+	"Plugins": [
+		{
+			"Name": "TapCore",
+			"Enabled": true
+		}
+	]
+}

@@ -1,0 +1,82 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    TapReview Android Plugin Configuration
+    Remote Dependency: com.taptap.sdk:tap-review:4.11.0-beta.3
+    桥接：GameActivity helper routeToTapReview（对齐 TapUpdate 模式）
+-->
+<root xmlns:android="http://schemas.android.com/apk/res/android">
+    <init>
+        <log text="TapReview: tap-review"/>
+    </init>
+
+    <proguardAdditions>
+        <insert>
+            <![CDATA[
+-keep class com.taptap.sdk.review.** { *; }
+-keep interface com.taptap.sdk.review.** { *; }
+-keep class com.taptap.sdk.review.unity.** { *; }
+-keepclassmembers class com.taptap.sdk.review.unity.** { *; }
+-keepclasseswithmembernames class * { native <methods>; }
+-keep class com.taptap.sdk.kit.internal.enginebridge.EngineBridge { *; }
+-keepclassmembers class com.taptap.sdk.kit.internal.enginebridge.EngineBridge {
+    public static final com.taptap.sdk.kit.internal.enginebridge.EngineBridge INSTANCE;
+    public void init(android.app.Activity);
+    public void registerService(java.lang.Class, com.taptap.sdk.kit.internal.enginebridge.IEngineBridgeService);
+    public void execCommand(java.lang.String, com.taptap.sdk.kit.internal.enginebridge.EngineBridgeCallback);
+}
+-keep interface com.taptap.sdk.kit.internal.enginebridge.IEngineBridgeService { *; }
+            ]]>
+        </insert>
+    </proguardAdditions>
+
+    <buildGradleAdditions>
+        <insert>
+            <![CDATA[
+dependencies {
+    implementation 'com.taptap.sdk:tap-review:4.11.0-beta.3'
+}
+            ]]>
+        </insert>
+    </buildGradleAdditions>
+
+    <gameActivityImportAdditions>
+        <insert>
+            <![CDATA[
+import com.taptap.sdk.kit.internal.enginebridge.EngineBridge;
+import com.taptap.sdk.review.unity.BridgeReviewService;
+import com.taptap.sdk.review.unity.BridgeReviewServiceImpl;
+            ]]>
+        </insert>
+    </gameActivityImportAdditions>
+
+    <gameActivityOnCreateAdditions>
+        <insert>
+            <![CDATA[
+        try {
+            EngineBridge.INSTANCE.init(this);
+            EngineBridge.INSTANCE.registerService(
+                BridgeReviewService.class, new BridgeReviewServiceImpl());
+            android.util.Log.i("TapSDK_UE", "TapReview: BridgeReviewService registered");
+        } catch (Exception e) {
+            android.util.Log.e("TapSDK_UE", "TapReview: registerService failed: " + e.getMessage(), e);
+        }
+            ]]>
+        </insert>
+    </gameActivityOnCreateAdditions>
+
+    <gameActivityClassAdditions>
+        <insert>
+            <![CDATA[
+    public void routeToTapReview(String commandJson) {
+        try {
+            EngineBridge.INSTANCE.init(this);
+            EngineBridge.INSTANCE.execCommand(commandJson, null);
+        } catch (Exception e) {
+            android.util.Log.e("TapSDK_UE", "TapReview route error: " + e.getMessage(), e);
+        }
+    }
+            ]]>
+        </insert>
+    </gameActivityClassAdditions>
+
+</root>

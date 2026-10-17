@@ -1,0 +1,120 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    TapRelationLite Android Plugin Configuration
+    Remote Dependency: com.taptap.sdk:tap-relation-lite:4.11.0-beta.3
+    桥接：GameActivity.routeToTapRelationLite(json, callback) 单一方法路由
+    注意：
+    - BridgeRelationLiteServiceImpl 直接持有 callbackMap，但 routeToTapRelationLite 持有独立实例
+    - friends_list/following_list/fans_list 是二次序列化 JSON 字符串
+    - relation_lite_result_code 是字符串
+-->
+<root xmlns:android="http://schemas.android.com/apk/res/android">
+    <init><log text="TapRelationLite: tap-relation-lite"/></init>
+
+    <proguardAdditions>
+        <insert>
+            <![CDATA[
+-keep class com.taptap.sdk.relation.lite.** { *; }
+-keep interface com.taptap.sdk.relation.lite.** { *; }
+-keep class com.taptap.sdk.relation.lite.unity.** { *; }
+-keepclassmembers class com.taptap.sdk.relation.lite.unity.** { *; }
+-keepclasseswithmembernames class * { native <methods>; }
+            ]]>
+        </insert>
+    </proguardAdditions>
+
+    <buildGradleAdditions>
+        <insert>
+            <![CDATA[
+dependencies {
+    implementation 'com.taptap.sdk:tap-relation-lite:4.11.0-beta.3'
+}
+            ]]>
+        </insert>
+    </buildGradleAdditions>
+
+    <gameActivityImportAdditions>
+        <insert>
+            <![CDATA[
+import com.taptap.sdk.relation.lite.unity.BridgeRelationLiteServiceImpl;
+import com.taptap.sdk.kit.internal.enginebridge.EngineBridgeCallback;
+            ]]>
+        </insert>
+    </gameActivityImportAdditions>
+
+    <gameActivityClassAdditions>
+        <insert>
+            <![CDATA[
+    private BridgeRelationLiteServiceImpl mRelationLiteService;
+
+    private BridgeRelationLiteServiceImpl getRelationLiteService() {
+        if (mRelationLiteService == null) { mRelationLiteService = new BridgeRelationLiteServiceImpl(); }
+        return mRelationLiteService;
+    }
+
+    public void routeToTapRelationLite(String requestJson, EngineBridgeCallback callback) {
+        try {
+            org.json.JSONObject req = new org.json.JSONObject(requestJson);
+            String method  = req.getString("method");
+            String argsStr = req.optString("args", "");
+            switch (method) {
+                case "inviteGameByRelationLite":
+                    getRelationLiteService().inviteGameByRelationLite();
+                    break;
+                case "inviteTeam":
+                    getRelationLiteService().inviteTeam(new org.json.JSONObject(argsStr).getString("relationLiteTeamId"));
+                    break;
+                case "showTapUserProfile": {
+                    org.json.JSONObject a = new org.json.JSONObject(argsStr);
+                    getRelationLiteService().showTapUserProfile(a.getString("relationLiteOpenId"), a.getString("unionId"));
+                    break;
+                }
+                case "getFriendsList":
+                    getRelationLiteService().getFriendsList(
+                        new org.json.JSONObject(argsStr).optString("friendListNextPageToken", ""), callback);
+                    break;
+                case "getFollowingList":
+                    getRelationLiteService().getFollowingList(
+                        new org.json.JSONObject(argsStr).optString("followingListNextPageToken", ""), callback);
+                    break;
+                case "getFansList":
+                    getRelationLiteService().getFansList(
+                        new org.json.JSONObject(argsStr).optString("fansListNextPageToken", ""), callback);
+                    break;
+                case "syncRelationshipWithOpenId": {
+                    org.json.JSONObject a = new org.json.JSONObject(argsStr);
+                    getRelationLiteService().syncRelationshipWithOpenId(
+                        a.getInt("syncRelationAction"), a.optString("nickname",""),
+                        a.optString("friendNickname",""), a.optString("friendOpenId",""), callback);
+                    break;
+                }
+                case "syncRelationshipWithUnionId": {
+                    org.json.JSONObject a = new org.json.JSONObject(argsStr);
+                    getRelationLiteService().syncRelationshipWithUnionId(
+                        a.getInt("syncRelationAction"), a.optString("nickname",""),
+                        a.optString("friendNickname",""), a.optString("friendUnionId",""), callback);
+                    break;
+                }
+                case "registerRelationLiteCallback":
+                    getRelationLiteService().registerRelationLiteCallback(callback);
+                    break;
+                case "unregisterRelationLiteCallback":
+                    getRelationLiteService().unregisterRelationLiteCallback();
+                    break;
+                case "registerRelationLiteInviteCallback":
+                    getRelationLiteService().registerRelationLiteInviteCallback(callback);
+                    break;
+                case "unregisterRelationLiteInviteCallback":
+                    getRelationLiteService().unregisterRelationLiteInviteCallback();
+                    break;
+                default:
+                    android.util.Log.w("TapSDK_UE", "TapRelationLite: unknown method: " + method);
+            }
+        } catch (Exception e) {
+            android.util.Log.e("TapSDK_UE", "TapRelationLite route error: " + e.getMessage(), e);
+        }
+    }
+            ]]>
+        </insert>
+    </gameActivityClassAdditions>
+</root>

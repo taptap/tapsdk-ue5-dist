@@ -1,0 +1,76 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  TapLogin iOS UPL Configuration
+  配置 CocoaPods 远程依赖和 Objective-C++ 桥接
+-->
+<root xmlns:ios="http://schemas.apple.com/cfbundle">
+  <!-- 初始化 -->
+  <init>
+    <log text="TapLogin iOS UPL: Initializing"/>
+  </init>
+
+  <!-- 添加 CocoaPods 依赖 -->
+  <iosPodDependencies>
+    <insertValue>
+      <!-- TapTap 登录 SDK -->
+      pod 'TapLoginSDK', '~> 3.0'
+
+      <!-- 或者指定具体版本 -->
+      <!-- pod 'TapLoginSDK', '3.x.x' -->
+
+      <!-- TapTap 核心 SDK（如果需要） -->
+      <!-- pod 'TapCommonSDK', '~> 3.0' -->
+    </insertValue>
+  </iosPodDependencies>
+
+  <!-- Info.plist 配置 -->
+  <plistUpdates>
+    <addElements tag="dict">
+      <!-- URL Scheme 配置 -->
+      <key>CFBundleURLTypes</key>
+      <array>
+        <dict>
+          <key>CFBundleURLSchemes</key>
+          <array>
+            <string>tapsdk</string>
+          </array>
+          <key>CFBundleURLName</key>
+          <string>com.taptap.sdk.login</string>
+        </dict>
+      </array>
+
+      <!-- 白名单配置（如果需要调用其他应用） -->
+      <key>LSApplicationQueriesSchemes</key>
+      <array>
+        <string>tapsdk</string>
+        <string>tapiosdk</string>
+      </array>
+    </addElements>
+  </plistUpdates>
+
+  <!-- 添加系统框架依赖 -->
+  <iosSystemFrameworks>
+    <framework>Foundation</framework>
+    <framework>UIKit</framework>
+    <framework>SafariServices</framework>
+    <framework>AuthenticationServices</framework>
+    <framework>WebKit</framework>
+  </iosSystemFrameworks>
+
+  <!-- 添加必要的编译标志 -->
+  <iosBuildSettingsAdditions>
+    <insert>
+      <!-- 启用 Objective-C++ -->
+      CLANG_ENABLE_OBJC_ARC = YES;
+      CLANG_CXX_LANGUAGE_STANDARD = "c++17";
+      CLANG_CXX_LIBRARY = "libc++";
+    </insert>
+  </iosBuildSettingsAdditions>
+
+  <!-- 日志输出 -->
+  <init>
+    <log text="TapLogin iOS UPL: Configuration completed"/>
+    <log text="TapLogin iOS UPL: CocoaPods dependency added: TapLoginSDK"/>
+    <log text="TapLogin iOS UPL: System frameworks configured"/>
+  </init>
+</root>

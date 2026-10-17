@@ -1,0 +1,84 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    TapRelation Android Plugin Configuration
+    Remote Dependency: com.taptap.sdk:tap-relation:4.11.0-beta.3
+    桥接：GameActivity.routeToTapRelation(json, callback) 单一方法路由
+    注意：BridgeRelationServiceImpl 直接持有实例（不走 EngineBridge 反射）
+-->
+<root xmlns:android="http://schemas.android.com/apk/res/android">
+    <init><log text="TapRelation: tap-relation"/></init>
+
+    <proguardAdditions>
+        <insert>
+            <![CDATA[
+-keep class com.taptap.sdk.relation.** { *; }
+-keep interface com.taptap.sdk.relation.** { *; }
+-keep class com.taptap.sdk.relation.unity.** { *; }
+-keepclassmembers class com.taptap.sdk.relation.unity.** { *; }
+-keepclasseswithmembernames class * { native <methods>; }
+            ]]>
+        </insert>
+    </proguardAdditions>
+
+    <buildGradleAdditions>
+        <insert>
+            <![CDATA[
+dependencies {
+    implementation 'com.taptap.sdk:tap-relation:4.11.0-beta.3'
+}
+            ]]>
+        </insert>
+    </buildGradleAdditions>
+
+    <gameActivityImportAdditions>
+        <insert>
+            <![CDATA[
+import com.taptap.sdk.relation.unity.BridgeRelationServiceImpl;
+import com.taptap.sdk.kit.internal.enginebridge.EngineBridgeCallback;
+            ]]>
+        </insert>
+    </gameActivityImportAdditions>
+
+    <gameActivityClassAdditions>
+        <insert>
+            <![CDATA[
+    private BridgeRelationServiceImpl mRelationService;
+
+    private BridgeRelationServiceImpl getRelationService() {
+        if (mRelationService == null) { mRelationService = new BridgeRelationServiceImpl(); }
+        return mRelationService;
+    }
+
+    public void routeToTapRelation(String requestJson, EngineBridgeCallback callback) {
+        try {
+            org.json.JSONObject req = new org.json.JSONObject(requestJson);
+            String method  = req.getString("method");
+            String argsStr = req.optString("args", "");
+            switch (method) {
+                case "prepare":                getRelationService().prepare(); break;
+                case "startMessenger":         getRelationService().startMessenger(); break;
+                case "inviteGame":             getRelationService().inviteGame(); break;
+                case "inviteTeam":
+                    getRelationService().inviteTeam(new org.json.JSONObject(argsStr).getString("teamId")); break;
+                case "showTapUserProfile": {
+                    org.json.JSONObject a = new org.json.JSONObject(argsStr);
+                    getRelationService().showTapUserProfile(a.getString("openId"), a.getString("unionId")); break;
+                }
+                case "getNewFansCount":        getRelationService().getNewFansCount(callback); break;
+                case "getUnreadMessageCount":  getRelationService().getUnreadMessageCount(callback); break;
+                case "registerRelationCallback": getRelationService().registerRelationCallback(callback); break;
+                case "unregisterRelationCallback": getRelationService().unregisterRelationCallback(); break;
+                case "registerRelationInviteCallback": getRelationService().registerRelationInviteCallback(callback); break;
+                case "unregisterRelationInviteCallback": getRelationService().unregisterRelationInviteCallback(); break;
+                case "destroy":                getRelationService().destroy(); break;
+                default:
+                    android.util.Log.w("TapSDK_UE", "TapRelation: unknown method: " + method);
+            }
+        } catch (Exception e) {
+            android.util.Log.e("TapSDK_UE", "TapRelation route error: " + e.getMessage(), e);
+        }
+    }
+            ]]>
+        </insert>
+    </gameActivityClassAdditions>
+</root>

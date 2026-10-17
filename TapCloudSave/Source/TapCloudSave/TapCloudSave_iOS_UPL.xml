@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    TapCloudSave iOS Plugin Configuration
+    This file configures the TapCloudSave SDK integration for iOS builds in Unreal Engine.
+
+    Local Dependencies (vendored under ThirdParty/iOS/Frameworks/):
+    - TapTapCloudSaveSDK.xcframework  (Swift/ObjC bridge; exposes BridgeCloudSaveService)
+    - cloudsave_sdk.xcframework       (C++ core static archive used by the Swift SDK)
+
+    TapCloudSave provides cloud save archive management:
+    - Create / Update / Delete archive
+    - List archives
+    - Download archive data / cover (binary)
+    - Register cloud save state callbacks (NeedLogin / InitFail …)
+-->
+<root xmlns:ios="http://schemas.apple.com/AppleTypes">
+    <init>
+        <log text="TapCloudSave: TapTapCloudSaveSDK + cloudsave_sdk iOS (xcframework)"/>
+    </init>
+
+    <!-- Xcode build settings -->
+    <buildSettings>
+        <insert>
+            <![CDATA[
+// Enable Objective-C exceptions
+GCC_ENABLE_OBJC_EXCEPTIONS = YES
+
+// Enable ARC (Automatic Reference Counting)
+CLANG_ENABLE_OBJC_ARC = YES
+
+// C++ language standard
+CLANG_CXX_LANGUAGE_STANDARD = gnu++17
+
+// Disable bitcode (TapTapSDK doesn't support bitcode)
+ENABLE_BITCODE = NO
+
+// Set minimum iOS version (UE 5.7 requires iOS 15+)
+IPHONEOS_DEPLOYMENT_TARGET = 15.0
+            ]]>
+        </insert>
+    </buildSettings>
+
+    <!-- Additional linker flags -->
+    <buildSettings>
+        <insert>
+            <![CDATA[
+// Other linker flags - required for ObjC category loading
+// (BridgeCloudSaveService uses ObjC class methods + protocol conformance,
+//  -ObjC ensures static archive symbols are pulled into the final binary)
+OTHER_LDFLAGS = $(inherited) -ObjC
+            ]]>
+        </insert>
+    </buildSettings>
+</root>

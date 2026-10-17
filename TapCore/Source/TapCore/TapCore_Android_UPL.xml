@@ -1,0 +1,301 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    TapCore Android Plugin Configuration
+    This file configures the TapCore SDK integration for Android builds in Unreal Engine.
+
+    Remote Dependency: com.taptap.sdk:tap-core:4.11.0-beta.3
+
+    TapCore is the foundation module of TapSDK, providing:
+    - SDK initialization framework with DAG dependency management
+    - Common utilities and base classes
+    - Database management
+    - Logging system
+    - Global ID (GID) management
+-->
+<root xmlns:android="http://schemas.android.com/apk/res/android">
+    <init>
+        <log text="TapCore: tap-core:4.11.0-beta.3"/>
+    </init>
+
+    <proguardAdditions>
+        <insert>
+            <![CDATA[
+-keep class com.taptap.sdk.core.** { *; }
+-keep interface com.taptap.sdk.core.** { *; }
+-keep class com.taptap.sdk.kit.** { *; }
+-keep class com.taptap.sdk.common.** { *; }
+-keep class com.taptap.sdk.initializer.** { *; }
+-keep class com.taptap.sdk.db.** { *; }
+-keep class com.taptap.sdk.openlog.** { *; }
+-keep class com.taptap.sdk.gid.** { *; }
+
+-keep class com.taptap.sdk.core.internal.ue.** { *; }
+-keepclassmembers class com.taptap.sdk.core.internal.ue.** { *; }
+
+-keep @android.support.annotation.Keep class * { *; }
+-keep @androidx.annotation.Keep class * { *; }
+
+-keepclassmembers class com.taptap.sdk.core.** {
+    public <methods>;
+    public <fields>;
+}
+
+-keepclasseswithmembernames class * {
+    native <methods>;
+}
+
+-keep class * implements com.taptap.sdk.core.** {
+    public <methods>;
+}
+
+-keep class * implements com.taptap.sdk.core.spi.** { *; }
+
+-keepattributes *Annotation*
+-keepattributes Signature
+-keepattributes Exceptions
+
+-keepclassmembers class * implements java.io.Serializable {
+    static final long serialVersionUID;
+    private static final java.io.ObjectStreamField[] serialPersistentFields;
+    private void writeObject(java.io.ObjectOutputStream);
+    private void readObject(java.io.ObjectInputStream);
+    java.lang.Object writeReplace();
+    java.lang.Object readResolve();
+}
+
+-keepattributes SourceFile,LineNumberTable
+-renamesourcefileattribute SourceFile
+            ]]>
+        </insert>
+    </proguardAdditions>
+
+    <!-- Android Manifest additions -->
+    <androidManifestUpdates>
+        <!-- Network permissions for TapCore -->
+        <addPermission android:name="android.permission.INTERNET"/>
+        <addPermission android:name="android.permission.ACCESS_NETWORK_STATE"/>
+        <addPermission android:name="android.permission.ACCESS_WIFI_STATE"/>
+    </androidManifestUpdates>
+
+    <!-- Gradle repository and dependency configuration -->
+    <buildGradleAdditions>
+        <insert>
+            <![CDATA[
+android {
+    // Compile options for Java 8
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_1_8
+        targetCompatibility JavaVersion.VERSION_1_8
+    }
+
+    // Packaging options
+    packagingOptions {
+        // Prevent duplicate files
+        pickFirst 'META-INF/DEPENDENCIES'
+        pickFirst 'META-INF/LICENSE'
+        pickFirst 'META-INF/LICENSE.txt'
+        pickFirst 'META-INF/NOTICE'
+        pickFirst 'META-INF/NOTICE.txt'
+        pickFirst 'META-INF/INDEX.LIST'
+
+        // Exclude files that cause conflicts
+        exclude 'META-INF/*.kotlin_module'
+    }
+}
+
+repositories {
+    mavenCentral()
+    google()
+}
+
+dependencies {
+    // TapCore remote dependency (includes tap-common, tap-initializer, tap-db, tap-openlog, tap-gid)
+    implementation 'com.taptap.sdk:tap-core:4.11.0-beta.3'
+
+    // AndroidX dependencies
+    implementation 'androidx.appcompat:appcompat:1.6.1'
+    implementation 'androidx.core:core-ktx:1.12.0'
+    implementation 'androidx.lifecycle:lifecycle-runtime-ktx:2.6.2'
+
+    // Kotlin standard library
+    implementation 'org.jetbrains.kotlin:kotlin-stdlib:1.8.22'
+    implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3'
+    implementation 'org.jetbrains.kotlinx:kotlinx-serialization-json:1.5.1'
+
+    // JSON parsing
+    implementation 'com.google.code.gson:gson:2.10.1'
+
+    // OkHttp for networking
+    implementation 'com.squareup.okhttp3:okhttp:4.11.0'
+
+    // Room Database (if used by tap-db)
+    implementation 'androidx.room:room-runtime:2.6.1'
+    implementation 'androidx.room:room-ktx:2.6.1'
+}
+
+// appComponentFactory 冲突（androidx.core vs com.taptap.sdk:androidx）已通过
+// TapSDKDemo_Android_UPL.xml 中的 tools:replace 在 manifest 层面解决，无需锁定版本
+            ]]>
+        </insert>
+    </buildGradleAdditions>
+
+    <!-- Game Activity Java code additions -->
+    <gameActivityImportAdditions>
+        <insert>
+            <![CDATA[
+import com.taptap.sdk.core.internal.ue.TapCoreUERouter;
+import com.taptap.sdk.core.TapTapSdk;
+import com.taptap.sdk.initializer.api.TapInitCallback;
+import com.taptap.sdk.kit.internal.enginebridge.EngineBridgeCallback;
+            ]]>
+        </insert>
+    </gameActivityImportAdditions>
+
+    <gameActivityClassAdditions>
+        <insert>
+            <![CDATA[
+    private static final String TAG = "TapSDK_UE";
+    private TapInitCallback tapCoreInitCallback;
+    private long tapCoreInitAttempt;
+    public native void nativeOnTapCoreInitResult(long attempt, int code, String message);
+
+    public void initTapCore(final String configJson, final long attempt) {
+        runOnUiThread(() -> {
+            if (attempt < tapCoreInitAttempt) return;
+            tapCoreInitAttempt = attempt;
+            if (tapCoreInitCallback != null) {
+                TapTapSdk.removeInitCallback(tapCoreInitCallback);
+                tapCoreInitCallback = null;
+            }
+            try {
+                if (isDestroyed() || isFinishing()) {
+                    nativeOnTapCoreInitResult(attempt, 1003, "Activity is destroyed or finishing");
+                    return;
+                }
+                org.json.JSONObject request = new org.json.JSONObject();
+                request.put("method", "init");
+                request.put("params", configJson);
+                org.json.JSONObject response = new org.json.JSONObject(
+                    TapCoreUERouter.route(this, request.toString(), null));
+                if (!response.optBoolean("success", false)) {
+                    nativeOnTapCoreInitResult(attempt, 1003, response.optString("message", "Native init rejected"));
+                    return;
+                }
+                // Start the new native session first. Registering earlier can replay the previous failure.
+                // Native init runs inline on this UI thread; late registration replays this session's result.
+                tapCoreInitCallback = new TapInitCallback() {
+                    private void finish(int code, String message) {
+                        TapTapSdk.removeInitCallback(this);
+                        if (tapCoreInitCallback == this) tapCoreInitCallback = null;
+                        nativeOnTapCoreInitResult(attempt, code, message);
+                    }
+                    @Override public void onInitSuccess() { finish(0, null); }
+                    @Override public void onInitFail(int code, String message) { finish(code, message); }
+                };
+                TapTapSdk.addInitCallback(tapCoreInitCallback);
+            } catch (Exception e) {
+                if (tapCoreInitCallback != null) {
+                    TapTapSdk.removeInitCallback(tapCoreInitCallback);
+                    tapCoreInitCallback = null;
+                }
+                nativeOnTapCoreInitResult(attempt, 1003, e.toString());
+            }
+        });
+    }
+
+
+    public String routeToTapCore(String requestJson, EngineBridgeCallback callback) {
+        try {
+            return TapCoreUERouter.route(this, requestJson, callback);
+        } catch (Exception e) {
+            android.util.Log.e(TAG, "TapCore route error: " + e.getMessage(), e);
+            return "{\"success\":false,\"message\":\"" + e.getMessage() + "\"}";
+        }
+    }
+            ]]>
+        </insert>
+    </gameActivityClassAdditions>
+
+    <gameActivityOnCreateAdditions>
+        <insert>
+            <![CDATA[
+            ]]>
+        </insert>
+    </gameActivityOnCreateAdditions>
+
+    <gameActivityOnStartAdditions>
+        <insert>
+            <![CDATA[
+            ]]>
+        </insert>
+    </gameActivityOnStartAdditions>
+
+    <gameActivityOnResumeAdditions>
+        <insert>
+            <![CDATA[
+            ]]>
+        </insert>
+    </gameActivityOnResumeAdditions>
+
+    <gameActivityOnPauseAdditions>
+        <insert>
+            <![CDATA[
+            ]]>
+        </insert>
+    </gameActivityOnPauseAdditions>
+
+    <gameActivityOnStopAdditions>
+        <insert>
+            <![CDATA[
+            ]]>
+        </insert>
+    </gameActivityOnStopAdditions>
+
+    <gameActivityOnDestroyAdditions>
+        <insert>
+            <![CDATA[
+            ]]>
+        </insert>
+    </gameActivityOnDestroyAdditions>
+
+    <soLoadLibrary>
+        <insert>
+            <![CDATA[
+            ]]>
+        </insert>
+    </soLoadLibrary>
+
+    <!-- Additional Application manifest entries -->
+    <applicationManifestUpdates>
+        <insert>
+            <![CDATA[
+            <!-- TapCore configuration -->
+            <meta-data
+                android:name="com.taptap.sdk.APP_ID"
+                android:value="__TAP_APP_ID__" />
+            <meta-data
+                android:name="com.taptap.sdk.CLIENT_TOKEN"
+                android:value="__TAP_CLIENT_TOKEN__" />
+            <meta-data
+                android:name="com.taptap.sdk.REGION"
+                android:value="__TAP_REGION__" />
+
+            <!--
+            TapSDK UE Router (Decoupled per-module design)
+
+            Each module defines its own route method in GameActivity via UPL:
+              TapCore:       routeToTapCore(String requestJson, EngineBridgeCallback callback)
+              TapLogin:      routeToTapLogin(String requestJson, EngineBridgeCallback callback)
+              TapCompliance: routeToTapCompliance(String requestJson, EngineBridgeCallback callback)
+
+            C++ JNI signature: (Ljava/lang/String;Lcom/taptap/sdk/kit/internal/enginebridge/EngineBridgeCallback;)Ljava/lang/String;
+
+            Sync:  routeToTapCore("{\"method\":\"init\",...}", null)
+            Async: routeToTapCore("{\"method\":\"getVersion\",...}", callbackObject)
+
+            EngineBridgeCallback: interface with onResult(String jsonString)
+            -->
+            ]]>
+        </insert>
+    </applicationManifestUpdates>
+</root>

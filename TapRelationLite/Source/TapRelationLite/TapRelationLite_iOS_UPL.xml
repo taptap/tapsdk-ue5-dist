@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root xmlns:ios="http://schemas.apple.com/AppleTypes">
+    <init><log text="TapRelationLite: TapTapRelationLiteSDK iOS (xcframework)"/></init>
+    <buildSettings>
+        <insert><![CDATA[
+GCC_ENABLE_OBJC_EXCEPTIONS = YES
+CLANG_ENABLE_OBJC_ARC = YES
+ENABLE_BITCODE = NO
+IPHONEOS_DEPLOYMENT_TARGET = 15.0
+        ]]></insert>
+    </buildSettings>
+    <buildSettings>
+        <insert><![CDATA[OTHER_LDFLAGS = $(inherited) -ObjC]]></insert>
+    </buildSettings>
+</root>

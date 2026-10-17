@@ -1,0 +1,87 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    TapRep Android Plugin Configuration
+    Remote Dependency: com.taptap.sdk:tap-rep:4.11.0-beta.3
+
+    桥接设计：routeToTapRep(json, callback) 单一方法路由（对齐 Unity TapRepMobile + TapMoment 模式）
+    - GameActivity 持有 BridgeRepServiceImpl 实例（mRepService），不经 EngineBridge 反射注册
+    - open 需要把 EngineBridgeCallbackProxy 直接传给 BridgeRepServiceImpl.open(openUrl, callback)，
+      与 TapMoment.setCallback 同理，绕开 execCommand 在 UE 模式下固定走单参 nativeOnResult 的限制。
+    - 回调为一次性：原生 open 完成后回调一次 EngineBridgeResult JSON {"code":N,"message":..,"content":null}
+-->
+<root xmlns:android="http://schemas.android.com/apk/res/android">
+    <init>
+        <log text="TapRep: tap-rep"/>
+    </init>
+
+    <proguardAdditions>
+        <insert>
+            <![CDATA[
+-keep class com.taptap.sdk.rep.** { *; }
+-keep interface com.taptap.sdk.rep.** { *; }
+-keepclassmembers class com.taptap.sdk.rep.enginebridge.** { *; }
+-keepclasseswithmembernames class * { native <methods>; }
+-keep class com.taptap.sdk.kit.internal.enginebridge.EngineBridgeCallbackProxy { *; }
+-keep interface com.taptap.sdk.kit.internal.enginebridge.EngineBridgeCallback { *; }
+            ]]>
+        </insert>
+    </proguardAdditions>
+
+    <buildGradleAdditions>
+        <insert>
+            <![CDATA[
+dependencies {
+    implementation 'com.taptap.sdk:tap-rep:4.11.0-beta.3'
+}
+            ]]>
+        </insert>
+    </buildGradleAdditions>
+
+    <gameActivityImportAdditions>
+        <insert>
+            <![CDATA[
+import com.taptap.sdk.rep.enginebridge.BridgeRepServiceImpl;
+import com.taptap.sdk.kit.internal.enginebridge.EngineBridgeCallback;
+            ]]>
+        </insert>
+    </gameActivityImportAdditions>
+
+    <gameActivityClassAdditions>
+        <insert>
+            <![CDATA[
+    private BridgeRepServiceImpl mRepService;
+
+    private BridgeRepServiceImpl getRepService() {
+        if (mRepService == null) { mRepService = new BridgeRepServiceImpl(); }
+        return mRepService;
+    }
+
+    public void routeToTapRep(String requestJson, EngineBridgeCallback callback) {
+        try {
+            org.json.JSONObject req = new org.json.JSONObject(requestJson);
+            String method  = req.getString("method");
+            String argsStr = req.optString("args", "");
+            switch (method) {
+                case "open": {
+                    String openUrl = new org.json.JSONObject(argsStr).optString("openUrl", "");
+                    getRepService().open(openUrl, callback);
+                    break;
+                }
+                default:
+                    android.util.Log.w("TapSDK_UE", "TapRep: unknown method: " + method);
+                    callback.onResult(
+                        "{\"code\":-1,\"message\":\"unknown TapRep method\"}");
+            }
+        } catch (Exception e) {
+            android.util.Log.e("TapSDK_UE", "TapRep route error: " + e.getMessage(), e);
+            callback.onResult(
+                "{\"code\":-1,\"message\":\"TapRep route error: "
+                    + String.valueOf(e.getMessage()).replace("\"", "'")
+                    + "\"}");
+        }
+    }
+            ]]>
+        </insert>
+    </gameActivityClassAdditions>
+
+</root>

@@ -1,0 +1,29 @@
+{
+	"FileVersion": 3,
+	"Version": 1,
+	"VersionName": "4.11.0-beta.3",
+	"FriendlyName": "TapRep",
+	"Description": "TapSDK Rep module (Android + iOS)",
+	"Category": "TapSDK",
+	"CreatedBy": "TapTap",
+	"CanContainContent": false,
+	"Modules": [
+		{
+			"Name": "TapRep",
+			"Type": "Runtime",
+			"LoadingPhase": "Default",
+			"PlatformAllowList": [
+				"Win64",
+				"Mac",
+				"IOS",
+				"Android"
+			]
+		}
+	],
+	"Plugins": [
+		{
+			"Name": "TapCore",
+			"Enabled": true
+		}
+	]
+}

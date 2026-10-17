@@ -1,0 +1,92 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    TapUpdate Android Plugin Configuration
+
+    Remote Dependency: com.taptap.sdk:tap-update:4.11.0-beta.3
+
+    桥接方式：GameActivity helper（对齐 TapAchievement / TapLogin 路径 A）
+    - gameActivityOnCreateAdditions: EngineBridge.init + registerService
+    - gameActivityClassAdditions:    routeToTapUpdate(commandJson)
+    - C++ 调 routeToTapUpdate 而非直接调 EngineBridge.execCommand
+-->
+<root xmlns:android="http://schemas.android.com/apk/res/android">
+    <init>
+        <log text="TapUpdate: tap-update:4.11.0-beta.3"/>
+    </init>
+
+    <proguardAdditions>
+        <insert>
+            <![CDATA[
+-keep class com.taptap.sdk.update.** { *; }
+-keep interface com.taptap.sdk.update.** { *; }
+-keep class com.taptap.sdk.update.enginebridge.** { *; }
+-keepclassmembers class com.taptap.sdk.update.enginebridge.** { *; }
+-keep class com.taptap.sdk.kit.internal.enginebridge.EngineBridge { *; }
+-keepclassmembers class com.taptap.sdk.kit.internal.enginebridge.EngineBridge {
+    public static final com.taptap.sdk.kit.internal.enginebridge.EngineBridge INSTANCE;
+    public void init(android.app.Activity);
+    public void registerService(java.lang.Class, com.taptap.sdk.kit.internal.enginebridge.IEngineBridgeService);
+    public void execCommand(java.lang.String, com.taptap.sdk.kit.internal.enginebridge.EngineBridgeCallback);
+    public native void nativeOnResult(java.lang.String);
+}
+-keep interface com.taptap.sdk.kit.internal.enginebridge.IEngineBridgeService { *; }
+-keepclasseswithmembernames class * {
+    native <methods>;
+}
+            ]]>
+        </insert>
+    </proguardAdditions>
+
+    <buildGradleAdditions>
+        <insert>
+            <![CDATA[
+dependencies {
+    implementation 'com.taptap.sdk:tap-update:4.11.0-beta.3'
+}
+            ]]>
+        </insert>
+    </buildGradleAdditions>
+
+    <gameActivityImportAdditions>
+        <insert>
+            <![CDATA[
+import com.taptap.sdk.kit.internal.enginebridge.EngineBridge;
+import com.taptap.sdk.update.enginebridge.BridgeUpdateService;
+import com.taptap.sdk.update.enginebridge.BridgeUpdateServiceImpl;
+            ]]>
+        </insert>
+    </gameActivityImportAdditions>
+
+    <!-- Activity 创建时初始化 EngineBridge 并注册 BridgeUpdateService -->
+    <gameActivityOnCreateAdditions>
+        <insert>
+            <![CDATA[
+        try {
+            EngineBridge.INSTANCE.init(this);
+            EngineBridge.INSTANCE.registerService(
+                BridgeUpdateService.class, new BridgeUpdateServiceImpl());
+            android.util.Log.i("TapSDK_UE", "TapUpdate: BridgeUpdateService registered");
+        } catch (Exception e) {
+            android.util.Log.e("TapSDK_UE", "TapUpdate: registerService failed: " + e.getMessage(), e);
+        }
+            ]]>
+        </insert>
+    </gameActivityOnCreateAdditions>
+
+    <!-- C++ 通过此方法调用 EngineBridge.execCommand（对齐 TapAchievement 路由模式） -->
+    <gameActivityClassAdditions>
+        <insert>
+            <![CDATA[
+    public void routeToTapUpdate(String commandJson) {
+        try {
+            EngineBridge.INSTANCE.init(this);
+            EngineBridge.INSTANCE.execCommand(commandJson, null);
+        } catch (Exception e) {
+            android.util.Log.e("TapSDK_UE", "TapUpdate route error: " + e.getMessage(), e);
+        }
+    }
+            ]]>
+        </insert>
+    </gameActivityClassAdditions>
+
+</root>

@@ -1,0 +1,33 @@
+{
+	"FileVersion": 3,
+	"Version": 1,
+	"VersionName": "4.11.0-beta.3",
+	"FriendlyName": "TapMoment",
+	"Description": "TapSDK Moment module (Android + iOS)",
+	"Category": "TapSDK",
+	"CreatedBy": "TapTap",
+	"CanContainContent": false,
+	"Modules": [
+		{
+			"Name": "TapMoment",
+			"Type": "Runtime",
+			"LoadingPhase": "Default",
+			"PlatformAllowList": [
+				"Win64",
+				"Mac",
+				"IOS",
+				"Android"
+			]
+		}
+	],
+	"Plugins": [
+		{
+			"Name": "TapCore",
+			"Enabled": true
+		},
+		{
+			"Name": "TapLogin",
+			"Enabled": true
+		}
+	]
+}

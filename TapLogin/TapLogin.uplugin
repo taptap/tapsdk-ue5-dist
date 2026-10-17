@@ -1,0 +1,37 @@
+{
+	"FileVersion": 3,
+	"Version": 1,
+	"VersionName": "4.11.0-beta.3",
+	"FriendlyName": "TapLogin",
+	"Description": "TapSDK Login module for user authentication",
+	"Category": "TapSDK",
+	"CreatedBy": "TapTap",
+	"CreatedByURL": "https://www.taptap.cn",
+	"DocsURL": "",
+	"MarketplaceURL": "",
+	"SupportURL": "",
+	"CanContainContent": true,
+	"IsBetaVersion": false,
+	"IsExperimentalVersion": false,
+	"Installed": false,
+	"Modules": [
+		{
+			"Name": "TapLogin",
+			"Type": "Runtime",
+			"LoadingPhase": "Default",
+			"PlatformAllowList": [
+				"Win64",
+				"Mac",
+				"Linux",
+				"IOS",
+				"Android"
+			]
+		}
+	],
+	"Plugins": [
+		{
+			"Name": "TapCore",
+			"Enabled": true
+		}
+	]
+}

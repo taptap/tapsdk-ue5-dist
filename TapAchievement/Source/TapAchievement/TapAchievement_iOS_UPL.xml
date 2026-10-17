@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    TapAchievement iOS Plugin Configuration
+
+    依赖：TapTapAchievementSDK.xcframework(vendored，暴露 BridgeAchievementService)
+      —— 当前仓库 ThirdParty/iOS/Frameworks 下尚无此产物，需原生团队提供。
+      备选：改用 CocoaPods `pod 'TapTapSDK/Achievement', '~> 4.10.2'`(Unity 方式)。
+
+    与 TapCloudSave iOS 同构：直接调 BridgeAchievementService ObjC 类方法，
+    -ObjC 链接标志确保静态归档的类方法/协议符号被拉入最终二进制。
+-->
+<root xmlns:ios="http://schemas.apple.com/AppleTypes">
+    <init>
+        <log text="TapAchievement: TapTapAchievementSDK iOS (xcframework)"/>
+    </init>
+
+    <buildSettings>
+        <insert>
+            <![CDATA[
+GCC_ENABLE_OBJC_EXCEPTIONS = YES
+CLANG_ENABLE_OBJC_ARC = YES
+CLANG_CXX_LANGUAGE_STANDARD = gnu++17
+ENABLE_BITCODE = NO
+IPHONEOS_DEPLOYMENT_TARGET = 15.0
+            ]]>
+        </insert>
+    </buildSettings>
+
+    <buildSettings>
+        <insert>
+            <![CDATA[
+OTHER_LDFLAGS = $(inherited) -ObjC
+            ]]>
+        </insert>
+    </buildSettings>
+</root>

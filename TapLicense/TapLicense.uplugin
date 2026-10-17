@@ -1,0 +1,37 @@
+{
+	"FileVersion": 3,
+	"Version": 1,
+	"VersionName": "4.11.0-beta.3",
+	"FriendlyName": "TapLicense",
+	"Description": "TapSDK License & DLC ownership module (Win64 real / mobile bridge / desktop stub)",
+	"Category": "TapSDK",
+	"CreatedBy": "TapTap",
+	"CreatedByURL": "",
+	"DocsURL": "",
+	"MarketplaceURL": "",
+	"SupportURL": "",
+	"CanContainContent": false,
+	"IsBetaVersion": false,
+	"IsExperimentalVersion": false,
+	"Installed": false,
+	"Modules": [
+		{
+			"Name": "TapLicense",
+			"Type": "Runtime",
+			"LoadingPhase": "Default",
+			"PlatformAllowList": [
+				"Win64",
+				"Mac",
+				"Linux",
+				"Android",
+				"IOS"
+			]
+		}
+	],
+	"Plugins": [
+		{
+			"Name": "TapCore",
+			"Enabled": true
+		}
+	]
+}

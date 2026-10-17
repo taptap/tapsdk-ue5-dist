@@ -1,0 +1,109 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    TapLicense Android Plugin Configuration
+    This file configures the TapLicense SDK integration for Android builds in Unreal Engine.
+
+    Remote Dependency: com.taptap.sdk:tap-license:4.11.0-beta.3
+    VERIFY: 以移动端发布的实际 Maven 坐标与版本为准
+
+    TapLicense provides game license verification and DLC management:
+    - Check license ownership
+    - Query DLC availability
+    - Purchase DLC
+-->
+<root xmlns:android="http://schemas.android.com/apk/res/android">
+    <init>
+        <log text="TapLicense: tap-license:4.11.0-beta.3"/>
+    </init>
+
+    <proguardAdditions>
+        <insert>
+            <![CDATA[
+-keep class com.taptap.sdk.license.** { *; }
+-keep interface com.taptap.sdk.license.** { *; }
+
+-keep class com.taptap.sdk.license.internal.ue.** { *; }
+-keepclassmembers class com.taptap.sdk.license.internal.ue.** { *; }
+
+-keep @android.support.annotation.Keep class * { *; }
+-keep @androidx.annotation.Keep class * { *; }
+
+-keepclassmembers class com.taptap.sdk.license.** {
+    public <methods>;
+    public <fields>;
+}
+
+-keepclasseswithmembernames class * {
+    native <methods>;
+}
+
+-keep class * implements com.taptap.sdk.license.** {
+    public <methods>;
+}
+
+-keepattributes *Annotation*
+-keepattributes Signature
+-keepattributes Exceptions
+
+-keepclassmembers class * implements java.io.Serializable {
+    static final long serialVersionUID;
+    private static final java.io.ObjectStreamField[] serialPersistentFields;
+    private void writeObject(java.io.ObjectOutputStream);
+    private void readObject(java.io.ObjectInputStream);
+    java.lang.Object writeReplace();
+    java.lang.Object readResolve();
+}
+
+-keepattributes SourceFile,LineNumberTable
+-renamesourcefileattribute SourceFile
+
+-keep class com.taptap.sdk.kit.internal.enginebridge.** { *; }
+            ]]>
+        </insert>
+    </proguardAdditions>
+
+    <!-- Android Manifest additions -->
+    <androidManifestUpdates>
+        <!-- Network permissions for TapLicense -->
+        <addPermission android:name="android.permission.INTERNET"/>
+        <addPermission android:name="android.permission.ACCESS_NETWORK_STATE"/>
+    </androidManifestUpdates>
+
+    <!-- Gradle dependency configuration -->
+    <buildGradleAdditions>
+        <insert>
+            <![CDATA[
+dependencies {
+    implementation 'com.taptap.sdk:tap-license:4.11.0-beta.3'
+}
+            ]]>
+        </insert>
+    </buildGradleAdditions>
+
+    <!-- Import TapLicense router -->
+    <gameActivityImportAdditions>
+        <insert>
+            <![CDATA[
+import com.taptap.sdk.license.internal.ue.TapLicenseUERouter;
+import com.taptap.sdk.kit.internal.enginebridge.EngineBridgeCallback;
+            ]]>
+        </insert>
+    </gameActivityImportAdditions>
+
+    <!-- TapLicense route method -->
+    <gameActivityClassAdditions>
+        <insert>
+            <![CDATA[
+    public String routeToTapLicense(String requestJson, EngineBridgeCallback callback) {
+        try {
+            return TapLicenseUERouter.route(this, requestJson, callback);
+        } catch (Exception e) {
+            android.util.Log.e("TapSDK_UE", "TapLicense route error: " + e.getMessage(), e);
+            return "{\"success\":false,\"message\":\"" + e.getMessage() + "\"}";
+        }
+    }
+            ]]>
+        </insert>
+    </gameActivityClassAdditions>
+
+</root>

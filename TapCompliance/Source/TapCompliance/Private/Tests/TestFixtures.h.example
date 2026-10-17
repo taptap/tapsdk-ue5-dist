@@ -1,0 +1,32 @@
+// Copyright TapTap. All Rights Reserved.
+//
+// 复制为 TestFixtures.h 并填入真实的研发环境凭证。
+// TestFixtures.h 已被 .gitignore，不会提交。
+// 同时填入一个研发环境真实存在的测试账号 userId（任意字符串都行，只要服务端能识别）。
+
+#pragma once
+
+#include "CoreMinimal.h"
+
+namespace TapComplianceTestFixtures
+{
+	// === 必填：TapSDK Client 凭证（X-Tap-Sign 签名所需） === //
+	// 来自开发者后台「应用密钥」页面，需用研发环境的 client
+	static const FString Tap_ClientID          = TEXT("REPLACE_WITH_REAL_CLIENT_ID");
+	static const FString Tap_ClientToken       = TEXT("REPLACE_WITH_REAL_CLIENT_TOKEN");
+
+	// === 必填：TapLogin MAC token（FastAuth 路径所需） === //
+	static const FString TapLogin_Kid          = TEXT("REPLACE_WITH_REAL_KID");
+	static const FString TapLogin_MacKey       = TEXT("REPLACE_WITH_REAL_MAC_KEY");
+	static const FString TapLogin_MacAlgorithm = TEXT("hmac-sha-1");
+
+	// === 必填：测试用 userId（任意字符串，建议带 ut_ 前缀方便识别） === //
+	static const FString TestUserId            = TEXT("ut_pc_compliance_001");
+
+	// === 选填：手动实名测试用假身份信息（业务错误即视为网络层 OK） === //
+	static const FString FakeName              = TEXT("张测试");
+	static const FString FakeIdCard            = TEXT("110101199001011234");
+
+	// === 选填：支付测试金额（单位：分） === //
+	static constexpr int64 PaymentAmountFen    = 1; // 1 分钱
+}
