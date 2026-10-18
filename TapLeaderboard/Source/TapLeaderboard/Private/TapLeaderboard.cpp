@@ -15,7 +15,7 @@ void UTapLeaderboard::OpenLeaderboard(const FString& LeaderboardId, const FStrin
     }
 }
 
-void UTapLeaderboard::OpenUserProfile(const FString& OpenId, const FString& UnionId)
+void UTapLeaderboard::ShowTapUserProfile(const FString& OpenId, const FString& UnionId)
 {
     if (!FTapSdkChecker::CheckInitialize()) return;
     if (TSharedPtr<ITapLeaderboardPlatform> P = FTapLeaderboardPlatformFactory::CreatePlatform())
@@ -24,6 +24,7 @@ void UTapLeaderboard::OpenUserProfile(const FString& OpenId, const FString& Unio
 
 void UTapLeaderboard::SubmitScores(const TArray<FTapLeaderboardScoreItem>& Scores,const FTapLeaderboardSubmitCallback& OnSuccess,const FTapLeaderboardErrorCallback& OnError)
 {
+    check(IsInGameThread());
     if (!FTapSdkChecker::CheckInitialize()){OnError.ExecuteIfBound(TEXT("submitScores"),-1,TEXT("TapSDK not initialized"));return;}
     if (TSharedPtr<ITapLeaderboardPlatform> P = FTapLeaderboardPlatformFactory::CreatePlatform())
         FTapLeaderboardCallbackManager::Get().EnqueueSubmit(OnSuccess, OnError, [P, Scores]() { P->SubmitScores(Scores); });
@@ -35,6 +36,7 @@ void UTapLeaderboard::LoadLeaderboardScores(
     const FString& LeaderboardId, const FString& Collection,
     const FString& NextPage, const FString& PeriodToken,const FTapLeaderboardScoresCallback& OnSuccess,const FTapLeaderboardErrorCallback& OnError)
 {
+    check(IsInGameThread());
     if (!FTapSdkChecker::CheckInitialize()){OnError.ExecuteIfBound(TEXT("loadScores"),-1,TEXT("TapSDK not initialized"));return;}
     if (TSharedPtr<ITapLeaderboardPlatform> P = FTapLeaderboardPlatformFactory::CreatePlatform())
         FTapLeaderboardCallbackManager::Get().EnqueueScores(TEXT("loadScores"), OnSuccess, OnError,
@@ -46,6 +48,7 @@ void UTapLeaderboard::LoadLeaderboardScores(
 void UTapLeaderboard::LoadCurrentPlayerLeaderboardScore(
     const FString& LeaderboardId, const FString& Collection, const FString& PeriodToken,const FTapLeaderboardCurrentScoreCallback& OnSuccess,const FTapLeaderboardErrorCallback& OnError)
 {
+    check(IsInGameThread());
     if (!FTapSdkChecker::CheckInitialize()){OnError.ExecuteIfBound(TEXT("loadCurrentPlayerScore"),-1,TEXT("TapSDK not initialized"));return;}
     if (TSharedPtr<ITapLeaderboardPlatform> P = FTapLeaderboardPlatformFactory::CreatePlatform())
         FTapLeaderboardCallbackManager::Get().EnqueueCurrent(OnSuccess, OnError,
@@ -58,6 +61,7 @@ void UTapLeaderboard::LoadPlayerCenteredScores(
     const FString& LeaderboardId, const FString& Collection,
     const FString& PeriodToken, int32 MaxCount,const FTapLeaderboardScoresCallback& OnSuccess,const FTapLeaderboardErrorCallback& OnError)
 {
+    check(IsInGameThread());
     if (!FTapSdkChecker::CheckInitialize()){OnError.ExecuteIfBound(TEXT("loadPlayerCenteredScores"),-1,TEXT("TapSDK not initialized"));return;}
     if (TSharedPtr<ITapLeaderboardPlatform> P = FTapLeaderboardPlatformFactory::CreatePlatform())
         FTapLeaderboardCallbackManager::Get().EnqueueScores(TEXT("loadPlayerCenteredScores"), OnSuccess, OnError,

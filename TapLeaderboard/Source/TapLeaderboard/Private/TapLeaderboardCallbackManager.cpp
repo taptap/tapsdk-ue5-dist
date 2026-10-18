@@ -8,6 +8,7 @@ FTapLeaderboardCallbackManager& FTapLeaderboardCallbackManager::Get()
 
 void FTapLeaderboardCallbackManager::Reset()
 {
+    check(IsInGameThread());
     Events.Reset();
     Share.Reset();
     FScopeLock ScopeLock(&Lock);
@@ -21,6 +22,7 @@ void FTapLeaderboardCallbackManager::EnqueueScores(
     const FTapLeaderboardScoresCallback& OnSuccess,
     const FTapLeaderboardErrorCallback& OnError, TFunction<void()> Dispatch)
 {
+    check(IsInGameThread());
     bool bStart;
     {
         FScopeLock ScopeLock(&Lock);
@@ -34,6 +36,7 @@ void FTapLeaderboardCallbackManager::EnqueueCurrent(
     const FTapLeaderboardCurrentScoreCallback& OnSuccess,
     const FTapLeaderboardErrorCallback& OnError, TFunction<void()> Dispatch)
 {
+    check(IsInGameThread());
     bool bStart;
     {
         FScopeLock ScopeLock(&Lock);
@@ -47,6 +50,7 @@ void FTapLeaderboardCallbackManager::EnqueueSubmit(
     const FTapLeaderboardSubmitCallback& OnSuccess,
     const FTapLeaderboardErrorCallback& OnError, TFunction<void()> Dispatch)
 {
+    check(IsInGameThread());
     bool bStart;
     {
         FScopeLock ScopeLock(&Lock);
@@ -58,6 +62,7 @@ void FTapLeaderboardCallbackManager::EnqueueSubmit(
 
 void FTapLeaderboardCallbackManager::Scores(const FString& Operation, const FTapLeaderboardScoresResult& Result)
 {
+    check(IsInGameThread());
     FScores Callback;
     TFunction<void()> Next;
     {
@@ -70,7 +75,7 @@ void FTapLeaderboardCallbackManager::Scores(const FString& Operation, const FTap
         {
             return;
         }
-        Callback = ScoresQ[Index];
+        Callback = MoveTemp(ScoresQ[Index]);
         ScoresQ.RemoveAt(Index);
         const FScores* Pending = ScoresQ.FindByPredicate([&Operation](const FScores& Item) { return Item.Operation == Operation; });
         if (Pending) Next = Pending->Dispatch;
@@ -83,12 +88,13 @@ void FTapLeaderboardCallbackManager::Scores(const FString& Operation, const FTap
 
 void FTapLeaderboardCallbackManager::Current(const FTapUserScoreResult& Result)
 {
+    check(IsInGameThread());
     FCurrent Callback;
     TFunction<void()> Next;
     {
         FScopeLock ScopeLock(&Lock);
         if (CurrentQ.IsEmpty()) return;
-        Callback = CurrentQ[0];
+        Callback = MoveTemp(CurrentQ[0]);
         CurrentQ.RemoveAt(0);
         if (!CurrentQ.IsEmpty()) Next = CurrentQ[0].Dispatch;
     }
@@ -98,12 +104,13 @@ void FTapLeaderboardCallbackManager::Current(const FTapUserScoreResult& Result)
 
 void FTapLeaderboardCallbackManager::Submitted(const FTapSubmitScoresResult& Result)
 {
+    check(IsInGameThread());
     FSubmit Callback;
     TFunction<void()> Next;
     {
         FScopeLock ScopeLock(&Lock);
         if (SubmitQ.IsEmpty()) return;
-        Callback = SubmitQ[0];
+        Callback = MoveTemp(SubmitQ[0]);
         SubmitQ.RemoveAt(0);
         if (!SubmitQ.IsEmpty()) Next = SubmitQ[0].Dispatch;
     }
@@ -113,6 +120,7 @@ void FTapLeaderboardCallbackManager::Submitted(const FTapSubmitScoresResult& Res
 
 void FTapLeaderboardCallbackManager::Error(const FString& Operation, int32 Code, const FString& Message)
 {
+    check(IsInGameThread());
     FTapLeaderboardErrorCallback OnError;
     TFunction<void()> Next;
     {

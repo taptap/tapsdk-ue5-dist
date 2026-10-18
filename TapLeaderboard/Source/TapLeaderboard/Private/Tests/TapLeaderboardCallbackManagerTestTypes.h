@@ -23,22 +23,22 @@ public:
     int32 ShareFailureCount = 0;
     FString LastShareData;
 
-    UFUNCTION() void OnScores(const FTapLeaderboardScoresResult& Result)
+    void OnScores(const FTapLeaderboardScoresResult& Result)
     {
         ++SuccessCount;
         LastLeaderboardId = Result.Leaderboard.Id;
     }
-    UFUNCTION() void OnCurrent(const FTapUserScoreResult& Result)
+    void OnCurrent(const FTapUserScoreResult& Result)
     {
         ++SuccessCount;
         LastLeaderboardId = Result.Leaderboard.Id;
     }
-    UFUNCTION() void OnSubmit(const FTapSubmitScoresResult& Result)
+    void OnSubmit(const FTapSubmitScoresResult& Result)
     {
         ++SuccessCount;
         LastSubmitCount = Result.Items.Num();
     }
-    UFUNCTION() void OnError(const FString& Operation, int32 Code, const FString& Message)
+    void OnError(const FString& Operation, int32 Code, const FString& Message)
     {
         ++ErrorCount;
         LastOperation = Operation;

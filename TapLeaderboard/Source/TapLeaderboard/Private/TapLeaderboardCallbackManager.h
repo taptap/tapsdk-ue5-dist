@@ -9,7 +9,7 @@ public:
     FTapWeakCallbackRegistry Events, Share;
     void Reset();
     void SetShareCallback(UObject* Callback);
-    // Native responses carry an operation name, not a request ID. Only one
+    // Current UE bridge responses carry an operation name, not a request ID. Only one
     // request per operation may be in flight, otherwise callbacks can be swapped.
     void EnqueueScores(const FString& Operation, const FTapLeaderboardScoresCallback& S,
         const FTapLeaderboardErrorCallback& E, TFunction<void()> Dispatch);

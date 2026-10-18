@@ -4,6 +4,7 @@
 #include "TapLeaderboardCallbackManager.h"
 #include "Tests/TapLeaderboardCallbackManagerTestTypes.h"
 #include "UObject/StrongObjectPtr.h"
+#include "UObject/GarbageCollection.h"
 #include "Async/Async.h"
 #include "Async/TaskGraphInterfaces.h"
 
@@ -79,7 +80,7 @@ bool FTapLeaderboardShareQueuedEventsTest::RunTest(const FString&)
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FTapLeaderboardRequestQueueTest,
     "TapLeaderboard.Callbacks.SerialRequests",
-    EAutomationTestFlags::ClientContext | EAutomationTestFlags::SmokeFilter)
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::ClientContext | EAutomationTestFlags::EngineFilter)
 
 bool FTapLeaderboardRequestQueueTest::RunTest(const FString&)
 {
@@ -88,10 +89,10 @@ bool FTapLeaderboardRequestQueueTest::RunTest(const FString&)
     TStrongObjectPtr<UTapLeaderboardCallbackManagerTestReceiver> Second(NewObject<UTapLeaderboardCallbackManagerTestReceiver>());
     FTapLeaderboardScoresCallback FirstSuccess, SecondSuccess;
     FTapLeaderboardErrorCallback FirstError, SecondError;
-    FirstSuccess.BindDynamic(First.Get(), &UTapLeaderboardCallbackManagerTestReceiver::OnScores);
-    SecondSuccess.BindDynamic(Second.Get(), &UTapLeaderboardCallbackManagerTestReceiver::OnScores);
-    FirstError.BindDynamic(First.Get(), &UTapLeaderboardCallbackManagerTestReceiver::OnError);
-    SecondError.BindDynamic(Second.Get(), &UTapLeaderboardCallbackManagerTestReceiver::OnError);
+    FirstSuccess.BindUObject(First.Get(), &UTapLeaderboardCallbackManagerTestReceiver::OnScores);
+    SecondSuccess.BindUObject(Second.Get(), &UTapLeaderboardCallbackManagerTestReceiver::OnScores);
+    FirstError.BindUObject(First.Get(), &UTapLeaderboardCallbackManagerTestReceiver::OnError);
+    SecondError.BindUObject(Second.Get(), &UTapLeaderboardCallbackManagerTestReceiver::OnError);
 
     int32 Started = 0, CenteredStarted = 0;
     Manager.EnqueueScores(TEXT("loadScores"), FirstSuccess, FirstError, [&]() { ++Started; });
@@ -138,18 +139,25 @@ bool FTapLeaderboardRequestQueueTest::RunTest(const FString&)
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FTapLeaderboardCurrentAndSubmitQueueTest,
     "TapLeaderboard.Callbacks.CurrentAndSubmitQueues",
-    EAutomationTestFlags::ClientContext | EAutomationTestFlags::SmokeFilter)
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::ClientContext | EAutomationTestFlags::EngineFilter)
 
 bool FTapLeaderboardCurrentAndSubmitQueueTest::RunTest(const FString&)
 {
     FTapLeaderboardCallbackManager Manager;
+    int32 CurrentSuccesses = 0, SubmitSuccesses = 0, Failures = 0;
+    const auto CurrentSuccess = FTapLeaderboardCurrentScoreCallback::CreateLambda(
+        [&](const FTapUserScoreResult&) { ++CurrentSuccesses; });
+    const auto SubmitSuccess = FTapLeaderboardSubmitCallback::CreateLambda(
+        [&](const FTapSubmitScoresResult&) { ++SubmitSuccesses; });
+    const auto Error = FTapLeaderboardErrorCallback::CreateLambda(
+        [&](const FString&, int32, const FString&) { ++Failures; });
     int32 CurrentStarted = 0, SubmitStarted = 0;
-    Manager.EnqueueCurrent({}, {}, [&]() { ++CurrentStarted; });
-    Manager.EnqueueCurrent({}, {}, [&]() { ++CurrentStarted; });
-    Manager.EnqueueCurrent({}, {}, [&]() { ++CurrentStarted; });
-    Manager.EnqueueSubmit({}, {}, [&]() { ++SubmitStarted; });
-    Manager.EnqueueSubmit({}, {}, [&]() { ++SubmitStarted; });
-    Manager.EnqueueSubmit({}, {}, [&]() { ++SubmitStarted; });
+    Manager.EnqueueCurrent(CurrentSuccess, Error, [&]() { ++CurrentStarted; });
+    Manager.EnqueueCurrent(CurrentSuccess, Error, [&]() { ++CurrentStarted; });
+    Manager.EnqueueCurrent(CurrentSuccess, Error, [&]() { ++CurrentStarted; });
+    Manager.EnqueueSubmit(SubmitSuccess, Error, [&]() { ++SubmitStarted; });
+    Manager.EnqueueSubmit(SubmitSuccess, Error, [&]() { ++SubmitStarted; });
+    Manager.EnqueueSubmit(SubmitSuccess, Error, [&]() { ++SubmitStarted; });
     TestEqual(TEXT("Current request is serialized"), CurrentStarted, 1);
     TestEqual(TEXT("Submit runs independently and is serialized"), SubmitStarted, 1);
     Manager.Current({});
@@ -165,6 +173,102 @@ bool FTapLeaderboardCurrentAndSubmitQueueTest::RunTest(const FString&)
     Manager.Submitted({});
     TestEqual(TEXT("Current reset keeps queue empty"), CurrentStarted, 3);
     TestEqual(TEXT("Submit reset keeps queue empty"), SubmitStarted, 3);
+    TestEqual(TEXT("Current success delivered once"), CurrentSuccesses, 1);
+    TestEqual(TEXT("Submit success delivered once"), SubmitSuccesses, 1);
+    TestEqual(TEXT("Each failed request delivered once"), Failures, 2);
+    return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FTapLeaderboardRequestLifetimeTest,
+    "TapLeaderboard.Callbacks.RequestLifetime",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::ClientContext | EAutomationTestFlags::EngineFilter)
+
+bool FTapLeaderboardRequestLifetimeTest::RunTest(const FString&)
+{
+    FTapLeaderboardCallbackManager Manager;
+    TWeakPtr<int32> Captured;
+    int32 Successes = 0, Failures = 0;
+    auto Enqueue = [&]()
+    {
+        const auto State = MakeShared<int32>(42);
+        Captured = State;
+        Manager.EnqueueScores(TEXT("loadScores"),
+            FTapLeaderboardScoresCallback::CreateLambda([&, State](const FTapLeaderboardScoresResult&)
+            {
+                TestEqual(TEXT("Temporary delegate capture survives until delivery"), *State, 42);
+                ++Successes;
+            }),
+            FTapLeaderboardErrorCallback::CreateLambda([&, State](const FString&, int32 Code, const FString&)
+            {
+                TestEqual(TEXT("Error capture survives until delivery"), *State, 42);
+                TestEqual(TEXT("Error code preserved"), Code, 403);
+                ++Failures;
+            }), []() {});
+    };
+    Enqueue();
+    TestTrue(TEXT("Manager owns a copy after caller delegate expires"), Captured.IsValid());
+    Manager.Scores(TEXT("loadScores"), {});
+    TestFalse(TEXT("Success releases both delegate captures"), Captured.IsValid());
+    Enqueue();
+    Manager.Error(TEXT("loadScores"), 403, TEXT("denied"));
+    TestFalse(TEXT("Failure releases both delegate captures"), Captured.IsValid());
+    Enqueue();
+    Manager.Reset();
+    TestFalse(TEXT("Reset releases pending captures"), Captured.IsValid());
+    Manager.Scores(TEXT("loadScores"), {});
+    Manager.Error(TEXT("loadScores"), 403, TEXT("late"));
+    TestEqual(TEXT("Only completed success delivered"), Successes, 1);
+    TestEqual(TEXT("Only completed failure delivered"), Failures, 1);
+
+    // Weak bindings must not retain destroyed UI receivers or block later requests.
+    TWeakObjectPtr<UTapLeaderboardCallbackManagerTestReceiver> Receiver(NewObject<UTapLeaderboardCallbackManagerTestReceiver>());
+    int32 WeakCalls = 0, NextStarted = 0;
+    Manager.EnqueueScores(TEXT("loadScores"),
+        FTapLeaderboardScoresCallback::CreateUObject(Receiver.Get(), &UTapLeaderboardCallbackManagerTestReceiver::OnScores),
+        {}, []() {});
+    Manager.EnqueueScores(TEXT("loadScores"), {},
+        FTapLeaderboardErrorCallback::CreateWeakLambda(Receiver.Get(),
+            [&](const FString&, int32, const FString&) { ++WeakCalls; }), []() {});
+    Manager.EnqueueScores(TEXT("loadScores"),
+        FTapLeaderboardScoresCallback::CreateLambda([&](const FTapLeaderboardScoresResult&) { ++Successes; }),
+        {}, [&]() { ++NextStarted; });
+    CollectGarbage(RF_NoFlags);
+    TestFalse(TEXT("Native UObject delegates do not keep receivers alive"), Receiver.IsValid());
+    Manager.Scores(TEXT("loadScores"), {});
+    Manager.Error(TEXT("loadScores"), 403, TEXT("receiver gone"));
+    TestEqual(TEXT("Expired weak lambda is skipped"), WeakCalls, 0);
+    TestEqual(TEXT("Expired receivers do not block the queue"), NextStarted, 1);
+    Manager.Scores(TEXT("loadScores"), {});
+    TestEqual(TEXT("Next live request still receives its result"), Successes, 2);
+    return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FTapLeaderboardRequestReentrantTest,
+    "TapLeaderboard.Callbacks.RequestReentrancy",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::ClientContext | EAutomationTestFlags::EngineFilter)
+
+bool FTapLeaderboardRequestReentrantTest::RunTest(const FString&)
+{
+    FTapLeaderboardCallbackManager Manager;
+    int32 Started = 0, NextCompleted = 0, ReentrantCompleted = 0;
+    Manager.EnqueueScores(TEXT("loadScores"),
+        FTapLeaderboardScoresCallback::CreateLambda([&](const FTapLeaderboardScoresResult&)
+        {
+            Manager.EnqueueScores(TEXT("loadScores"),
+                FTapLeaderboardScoresCallback::CreateLambda([&](const FTapLeaderboardScoresResult&) { ++ReentrantCompleted; }),
+                {}, [&]() { ++Started; });
+        }), {}, [&]() { ++Started; });
+    Manager.EnqueueScores(TEXT("loadScores"),
+        FTapLeaderboardScoresCallback::CreateLambda([&](const FTapLeaderboardScoresResult&) { ++NextCompleted; }),
+        {}, [&]() { ++Started; });
+    Manager.Scores(TEXT("loadScores"), {});
+    TestEqual(TEXT("Reentrant request waits behind reserved next request"), Started, 2);
+    Manager.Scores(TEXT("loadScores"), {});
+    TestEqual(TEXT("Reentrant request starts after next completion"), Started, 3);
+    TestEqual(TEXT("Next request receives its own result"), NextCompleted, 1);
+    TestEqual(TEXT("Reentrant request has not received another result"), ReentrantCompleted, 0);
+    Manager.Scores(TEXT("loadScores"), {});
+    TestEqual(TEXT("Reentrant request completes once"), ReentrantCompleted, 1);
     return true;
 }
 #endif

@@ -69,6 +69,18 @@ public:
 		return Callbacks.Num();
 	}
 
+	/** Detached snapshot of live receivers; does not retain or mutate registrations. */
+	TArray<TWeakObjectPtr<UObject>> Snapshot()
+	{
+		FScopeLock Lock(&Mutex);
+		TArray<TWeakObjectPtr<UObject>> Result;
+		for (const TWeakObjectPtr<UObject>& Callback : Callbacks)
+		{
+			if (Callback.IsValid()) Result.Add(Callback);
+		}
+		return Result;
+	}
+
 private:
 	FCriticalSection Mutex;
 	TArray<TWeakObjectPtr<UObject>> Callbacks;
