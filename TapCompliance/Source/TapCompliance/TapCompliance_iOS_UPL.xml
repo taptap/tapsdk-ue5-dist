@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    TapCompliance iOS Plugin Configuration
+    This file configures the TapCompliance SDK integration for iOS builds in Unreal Engine.
+
+    Local Dependency: TapTapComplianceSDK.xcframework (embedded in ThirdParty/iOS/Frameworks)
+
+    TapCompliance provides anti-addiction and real-name authentication:
+    - 启动合规认证流程 (Startup)
+    - 退出合规 UI (Exit)
+    - 检查支付限额 (CheckPaymentLimit)
+    - 提交支付结果 (SubmitPayment)
+    - 获取年龄段/剩余时间/AccessToken (GetAgeRange/GetUserRemainTime/GetCurrentAccessToken)
+-->
+<root xmlns:ios="http://schemas.apple.com/AppleTypes">
+    <init>
+        <log text="TapCompliance: TapTapComplianceSDK iOS (xcframework)"/>
+    </init>
+
+    <!-- Xcode build settings -->
+    <buildSettings>
+        <insert>
+            <![CDATA[
+// Enable Objective-C exceptions
+GCC_ENABLE_OBJC_EXCEPTIONS = YES
+
+// Enable ARC (Automatic Reference Counting)
+CLANG_ENABLE_OBJC_ARC = YES
+
+// C++ language standard
+CLANG_CXX_LANGUAGE_STANDARD = gnu++17
+
+// Disable bitcode (TapTapSDK doesn't support bitcode)
+ENABLE_BITCODE = NO
+
+// Set minimum iOS version (UE 5.7 requires iOS 15+)
+IPHONEOS_DEPLOYMENT_TARGET = 15.0
+            ]]>
+        </insert>
+    </buildSettings>
+
+    <!-- Additional linker flags -->
+    <buildSettings>
+        <insert>
+            <![CDATA[
+// Other linker flags - required for ObjC category loading
+OTHER_LDFLAGS = $(inherited) -ObjC
+            ]]>
+        </insert>
+    </buildSettings>
+</root>

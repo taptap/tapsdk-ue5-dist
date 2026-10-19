@@ -1,0 +1,131 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    TapShare Android Plugin Configuration
+    Remote Dependency: com.taptap.sdk:tap-share:4.11.0
+
+    桥接设计：GameActivity helper shareToTapTap(...) 直接构造 TapTapShareBuilder 并 share()
+    - 分享为直接 native API（无 EngineBridge service / 无 Unity 桥），返回 int 结果码同步回传 UE
+    - 结果码：0 成功 / -1 未安装 TapTap / -2 版本不支持（对齐 TapTapShareResult）
+
+    图片选择（demo 用）：pickShareImage() 走系统 ACTION_GET_CONTENT，结果在 onActivityResult 注入处
+    存入 mSharePickedImages（content:// URI，单张替换，对齐 Android 原生 demo）。UE 经
+    getPickedShareImagePaths() 取回 URI 字符串填入 ImagePaths；shareToTapTap 同时兼容 content:// 与 file://。
+-->
+<root xmlns:android="http://schemas.android.com/apk/res/android">
+    <init>
+        <log text="TapShare: tap-share"/>
+    </init>
+
+    <proguardAdditions>
+        <insert>
+            <![CDATA[
+-keep class com.taptap.sdk.share.** { *; }
+-keep interface com.taptap.sdk.share.** { *; }
+            ]]>
+        </insert>
+    </proguardAdditions>
+
+    <buildGradleAdditions>
+        <insert>
+            <![CDATA[
+dependencies {
+    implementation 'com.taptap.sdk:tap-share:4.11.0'
+}
+            ]]>
+        </insert>
+    </buildGradleAdditions>
+
+    <gameActivityImportAdditions>
+        <insert>
+            <![CDATA[
+import com.taptap.sdk.share.TapTapShareBuilder;
+import android.content.Intent;
+import android.net.Uri;
+import java.io.File;
+import java.util.ArrayList;
+            ]]>
+        </insert>
+    </gameActivityImportAdditions>
+
+    <gameActivityClassAdditions>
+        <insert>
+            <![CDATA[
+    private static final int TAPSHARE_PICK_IMAGE_REQUEST = 61001;
+    private final ArrayList<Uri> mSharePickedImages = new ArrayList<>();
+
+    /** 唤起系统图片选择器（demo 用）。结果在 onActivityResult 注入处理 */
+    public void pickShareImage() {
+        try {
+            Intent i = new Intent(Intent.ACTION_GET_CONTENT);
+            i.addCategory(Intent.CATEGORY_OPENABLE);
+            i.setType("image/*");
+            i.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            startActivityForResult(Intent.createChooser(i, "Image Chooser"), TAPSHARE_PICK_IMAGE_REQUEST);
+        } catch (Exception e) {
+            android.util.Log.e("TapSDK_UE", "TapShare pickShareImage error: " + e.getMessage(), e);
+        }
+    }
+
+    /** 返回已选图片的 URI 字符串数组（content:// 形式） */
+    public String[] getPickedShareImagePaths() {
+        String[] arr = new String[mSharePickedImages.size()];
+        for (int idx = 0; idx < mSharePickedImages.size(); idx++) {
+            arr[idx] = mSharePickedImages.get(idx).toString();
+        }
+        return arr;
+    }
+
+    public int getPickedShareImageCount() { return mSharePickedImages.size(); }
+
+    public void clearPickedShareImages() { mSharePickedImages.clear(); }
+
+    public int shareToTapTap(String title, String contents, String hashtagIds,
+                             String groupLabelId, String failUrl, String[] imagePaths) {
+        try {
+            TapTapShareBuilder builder = new TapTapShareBuilder();
+            if (title != null && title.length() > 0)            { builder.addTitle(title); }
+            if (contents != null && contents.length() > 0)      { builder.addContents(contents); }
+            if (hashtagIds != null && hashtagIds.length() > 0)  { builder.addHashtagIds(hashtagIds); }
+            if (groupLabelId != null && groupLabelId.length() > 0) { builder.addGroupLabelId(groupLabelId); }
+            if (failUrl != null && failUrl.length() > 0)        { builder.addFailUrl(failUrl); }
+
+            if (imagePaths != null && imagePaths.length > 0) {
+                ArrayList<Uri> uris = new ArrayList<>();
+                for (String p : imagePaths) {
+                    if (p != null && p.length() > 0) {
+                        // 兼容图片选择器返回的 content:// 与本地 file 路径
+                        if (p.startsWith("content://") || p.startsWith("file://")) {
+                            uris.add(Uri.parse(p));
+                        } else {
+                            uris.add(Uri.fromFile(new File(p)));
+                        }
+                    }
+                }
+                if (!uris.isEmpty()) { builder.addFooterImageUrls(uris); }
+            }
+
+            return builder.build().share(this);
+        } catch (Exception e) {
+            android.util.Log.e("TapSDK_UE", "TapShare error: " + e.getMessage(), e);
+            return -2;
+        }
+    }
+            ]]>
+        </insert>
+    </gameActivityClassAdditions>
+
+    <gameActivityOnActivityResultAdditions>
+        <insert>
+            <![CDATA[
+        if (requestCode == TAPSHARE_PICK_IMAGE_REQUEST && resultCode == RESULT_OK
+                && data != null && data.getData() != null) {
+            // 单张替换，对齐 Android 原生 demo（DemoShareActivity.picList）
+            mSharePickedImages.clear();
+            mSharePickedImages.add(data.getData());
+            android.util.Log.i("TapSDK_UE", "TapShare picked image: " + data.getData());
+        }
+            ]]>
+        </insert>
+    </gameActivityOnActivityResultAdditions>
+
+</root>

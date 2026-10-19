@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    TapCore iOS Plugin Configuration
+    This file configures the TapCore SDK integration for iOS builds in Unreal Engine.
+
+    Local Dependency: TapTapCoreSDK.xcframework (embedded in ThirdParty/iOS/Frameworks)
+
+    TapCore is the foundation module of TapSDK, providing:
+    - SDK initialization framework
+    - Common utilities and base classes
+    - Database management
+    - Logging system
+    - Global ID (GID) management
+-->
+<root xmlns:ios="http://schemas.apple.com/AppleTypes">
+    <init>
+        <log text="TapCore: TapTapCoreSDK iOS (xcframework)"/>
+    </init>
+
+    <!-- Info.plist additions -->
+    <plistUpdates>
+        <insert>
+            <![CDATA[
+<!-- TapTapSDK Configuration -->
+<key>TapTapSDKClientID</key>
+<string>__TAP_CLIENT_ID__</string>
+<key>TapTapSDKClientToken</key>
+<string>__TAP_CLIENT_TOKEN__</string>
+<key>TapTapSDKRegion</key>
+<string>__TAP_REGION__</string>
+
+<!-- App Transport Security Settings -->
+<key>NSAppTransportSecurity</key>
+<dict>
+    <key>NSAllowsArbitraryLoads</key>
+    <false/>
+    <key>NSAllowsArbitraryLoadsInWebContent</key>
+    <true/>
+</dict>
+            ]]>
+        </insert>
+    </plistUpdates>
+
+    <!-- Xcode build settings -->
+    <buildSettings>
+        <insert>
+            <![CDATA[
+// Enable Objective-C exceptions
+GCC_ENABLE_OBJC_EXCEPTIONS = YES
+
+// Enable ARC (Automatic Reference Counting)
+CLANG_ENABLE_OBJC_ARC = YES
+
+// C++ language standard
+CLANG_CXX_LANGUAGE_STANDARD = gnu++17
+
+// Objective-C language standard
+CLANG_CXX_LIBRARY = libc++
+
+// Disable bitcode (TapTapSDK doesn't support bitcode)
+ENABLE_BITCODE = NO
+
+// Set minimum iOS version (UE 5.7 requires iOS 15+)
+IPHONEOS_DEPLOYMENT_TARGET = 15.0
+            ]]>
+        </insert>
+    </buildSettings>
+
+    <!-- Additional linker flags -->
+    <buildSettings>
+        <insert>
+            <![CDATA[
+// Other linker flags - required for ObjC category loading
+OTHER_LDFLAGS = $(inherited) -ObjC
+            ]]>
+        </insert>
+    </buildSettings>
+</root>

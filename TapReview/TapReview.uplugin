@@ -1,0 +1,23 @@
+{
+	"FileVersion": 3,
+	"Version": 1,
+	"VersionName": "4.11.0",
+	"FriendlyName": "TapReview",
+	"Description": "TapSDK Review module (Android only)",
+	"Category": "TapSDK",
+	"CreatedBy": "TapTap",
+	"CanContainContent": false,
+	"Modules": [
+		{
+			"Name": "TapReview",
+			"Type": "Runtime",
+			"LoadingPhase": "Default"
+		}
+	],
+	"Plugins": [
+		{
+			"Name": "TapCore",
+			"Enabled": true
+		}
+	]
+}

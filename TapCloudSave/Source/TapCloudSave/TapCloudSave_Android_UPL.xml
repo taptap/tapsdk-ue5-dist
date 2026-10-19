@@ -1,0 +1,113 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    TapCloudSave Android Plugin Configuration
+    This file configures the TapCloudSave SDK integration for Android builds in Unreal Engine.
+
+    Remote Dependency: com.taptap.sdk:tap-cloudsave:4.11.0
+
+    NOTE: this UPL pulls tap-cloudsave (NOT tap-cloudsave-unity) because the
+    UE Router (TapCloudSaveUERouter) lives in the tap-cloudsave module so it
+    is reachable without forcing the Unity bridge artifact into UE5 projects.
+
+    The configured dependency must provide TapCloudSaveUERouter.
+
+    TapCloudSave provides cloud save archive management:
+    - Create / Update / Delete archive
+    - List archives
+    - Download archive data / cover (binary)
+    - Register cloud save state callbacks (NeedLogin / InitFail ...)
+-->
+<root xmlns:android="http://schemas.android.com/apk/res/android">
+    <init>
+        <log text="TapCloudSave: tap-cloudsave:4.11.0"/>
+    </init>
+
+    <proguardAdditions>
+        <insert>
+            <![CDATA[
+-keep class com.taptap.sdk.cloudsave.** { *; }
+-keep interface com.taptap.sdk.cloudsave.** { *; }
+
+-keep class com.taptap.sdk.cloudsave.internal.ue.** { *; }
+-keepclassmembers class com.taptap.sdk.cloudsave.internal.ue.** { *; }
+
+-keep @android.support.annotation.Keep class * { *; }
+-keep @androidx.annotation.Keep class * { *; }
+
+-keepclassmembers class com.taptap.sdk.cloudsave.** {
+    public <methods>;
+    public <fields>;
+}
+
+-keepclasseswithmembernames class * {
+    native <methods>;
+}
+
+-keep class * implements com.taptap.sdk.cloudsave.** {
+    public <methods>;
+}
+
+-keepattributes *Annotation*
+-keepattributes Signature
+-keepattributes Exceptions
+
+-keepclassmembers class * implements java.io.Serializable {
+    static final long serialVersionUID;
+    private static final java.io.ObjectStreamField[] serialPersistentFields;
+    private void writeObject(java.io.ObjectOutputStream);
+    private void readObject(java.io.ObjectInputStream);
+    java.lang.Object writeReplace();
+    java.lang.Object readResolve();
+}
+
+-keepattributes SourceFile,LineNumberTable
+-renamesourcefileattribute SourceFile
+            ]]>
+        </insert>
+    </proguardAdditions>
+
+    <!-- Android Manifest additions -->
+    <androidManifestUpdates>
+        <!-- Network permissions for TapCloudSave -->
+        <addPermission android:name="android.permission.INTERNET"/>
+        <addPermission android:name="android.permission.ACCESS_NETWORK_STATE"/>
+    </androidManifestUpdates>
+
+    <!-- Gradle dependency configuration -->
+    <buildGradleAdditions>
+        <insert>
+            <![CDATA[
+dependencies {
+    implementation 'com.taptap.sdk:tap-cloudsave:4.11.0'
+}
+            ]]>
+        </insert>
+    </buildGradleAdditions>
+
+    <!-- Import TapCloudSave router -->
+    <gameActivityImportAdditions>
+        <insert>
+            <![CDATA[
+import com.taptap.sdk.cloudsave.internal.ue.TapCloudSaveUERouter;
+import com.taptap.sdk.kit.internal.enginebridge.EngineBridgeCallback;
+            ]]>
+        </insert>
+    </gameActivityImportAdditions>
+
+    <!-- TapCloudSave route method -->
+    <gameActivityClassAdditions>
+        <insert>
+            <![CDATA[
+    public String routeToTapCloudSave(String requestJson, EngineBridgeCallback callback) {
+        try {
+            return TapCloudSaveUERouter.route(this, requestJson, callback);
+        } catch (Exception e) {
+            android.util.Log.e("TapSDK_UE", "TapCloudSave route error: " + e.getMessage(), e);
+            return "{\"success\":false,\"message\":\"" + e.getMessage() + "\"}";
+        }
+    }
+            ]]>
+        </insert>
+    </gameActivityClassAdditions>
+
+</root>

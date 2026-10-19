@@ -1,0 +1,33 @@
+{
+	"FileVersion": 3,
+	"Version": 1,
+	"VersionName": "4.11.0",
+	"FriendlyName": "TapAchievement",
+	"Description": "TapSDK Achievement module (Desktop Win64/Mac + Mobile iOS/Android)",
+	"Category": "TapSDK",
+	"CreatedBy": "TapTap",
+	"CanContainContent": true,
+	"Modules": [
+		{
+			"Name": "TapAchievement",
+			"Type": "Runtime",
+			"LoadingPhase": "Default",
+			"PlatformAllowList": [
+				"Win64",
+				"Mac",
+				"IOS",
+				"Android"
+			]
+		}
+	],
+	"Plugins": [
+		{
+			"Name": "TapCore",
+			"Enabled": true
+		},
+		{
+			"Name": "TapLogin",
+			"Enabled": true
+		}
+	]
+}

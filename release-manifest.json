@@ -1,0 +1,51 @@
+{
+  "source_layout": "flat",
+  "version": "4.11.0",
+  "source_repository": "taptap/tapsdk-monorepo",
+  "source_ref": "2e8b81eaf46472969da5582748e63fbd09699177",
+  "engine_versions": [
+    "5.7",
+    "5.8"
+  ],
+  "plugins": [
+    "TapCore",
+    "TapLogin",
+    "TapCompliance",
+    "TapAchievement",
+    "TapBattle",
+    "TapCloudSave",
+    "TapLeaderboard",
+    "TapLicense",
+    "TapMoment",
+    "TapProfile",
+    "TapRelation",
+    "TapRelationLite",
+    "TapRep",
+    "TapReview",
+    "TapShare",
+    "TapUpdate"
+  ],
+  "archives": {
+    "TapSDK-UE5-TapAchievement-v4.11.0.zip": "f05336dd27b631f99459adb4ff8b96fffc1a12d9056709badf2f94f019c7341b",
+    "TapSDK-UE5-TapBattle-v4.11.0.zip": "d1f724baf32d3023f9056daf6ca314a7cfc9613eaabd04a78fd1e1e4e255bf23",
+    "TapSDK-UE5-TapCloudSave-v4.11.0.zip": "30a9dfb1f4d0de68721ca5f4984eb2e6eb19cc5c3b46de34526ef0743db5486a",
+    "TapSDK-UE5-TapCompliance-v4.11.0.zip": "fb87d0ae37fe671cfbe0f5f3bdfd28d5ea1330252a72215ef1aaf93ad23e9976",
+    "TapSDK-UE5-TapCore-v4.11.0.zip": "c5a80393892b90289e5c55371d8b837bdb82b0b40b7da979c36fa7be47f92a8f",
+    "TapSDK-UE5-TapLeaderboard-v4.11.0.zip": "5a7877e97464d4b74b59a926a410f6de5016c250c1843f33f335e0907c6302e1",
+    "TapSDK-UE5-TapLicense-v4.11.0.zip": "85087996a21f292f9a0cc81018d4a38624819b10131ef0b6eb1482970c6ffdbc",
+    "TapSDK-UE5-TapLogin-v4.11.0.zip": "db623192c604a293bb67a70f6eddc496ed96f08c3e41997e08fcc896d001f1c4",
+    "TapSDK-UE5-TapMoment-v4.11.0.zip": "b04639786db0fb8777b711ee4c5120fe5579fcdcc9d5511030430683ffecae7b",
+    "TapSDK-UE5-TapProfile-v4.11.0.zip": "39a2f4413ad2b90b0b0d227ebcf84b08485884e182f498395ed6d90d2ebd59eb",
+    "TapSDK-UE5-TapRelation-v4.11.0.zip": "f78168d0ec7bc584aa0e7275d42bd5851d3267cdc68535878de47c765d773a57",
+    "TapSDK-UE5-TapRelationLite-v4.11.0.zip": "7b928ea3c7775f49ec2524ab3c278da427dc6f7c040833aadc74a1fb4f922e4e",
+    "TapSDK-UE5-TapRep-v4.11.0.zip": "56ae4e19c73cb4a3b3692bb4c73a73a330d7ea02f44c6434052e1ae7f093202f",
+    "TapSDK-UE5-TapReview-v4.11.0.zip": "1d36e75ce19ab0645a28e30c2b39c3d75e61c992a04b2938c64e93534b8d1b67",
+    "TapSDK-UE5-TapShare-v4.11.0.zip": "5b1a2a3ec3cad180824910f014bb992f2ecbf1aa94ea04711f66193f47254f2a",
+    "TapSDK-UE5-TapUpdate-v4.11.0.zip": "59301654e7423f2ef15221f00fcf144fc30b332bde5468e640759cd820616db3"
+  },
+  "native_dependencies": {
+    "android_version": "4.11.0",
+    "ios_version": "4.11.0",
+    "ios_source_ref": "4a57c4175481e2ff55299e1ba8f819d227b85544"
+  }
+}

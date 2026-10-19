@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    TapLicense iOS Plugin Configuration
+    This file configures the TapLicense SDK integration for iOS builds in Unreal Engine.
+
+    Local Dependency: TapTapLicenseSDK.xcframework (embedded in ThirdParty/iOS/Frameworks)
+    VERIFY: framework 名以实际交付的 xcframework 为准
+
+    TapLicense provides game license verification and DLC management:
+    - CheckLicense (验证游戏授权)
+    - QueryDLC (查询 DLC 状态)
+    - PurchaseDLC (购买 DLC)
+-->
+<root xmlns:ios="http://schemas.apple.com/AppleTypes">
+    <init>
+        <log text="TapLicense: TapTapLicenseSDK iOS (xcframework)"/>
+    </init>
+
+    <!-- Xcode build settings -->
+    <buildSettings>
+        <insert>
+            <![CDATA[
+// Enable Objective-C exceptions
+GCC_ENABLE_OBJC_EXCEPTIONS = YES
+
+// Enable ARC (Automatic Reference Counting)
+CLANG_ENABLE_OBJC_ARC = YES
+
+// C++ language standard
+CLANG_CXX_LANGUAGE_STANDARD = gnu++17
+
+// Disable bitcode (TapTapSDK doesn't support bitcode)
+ENABLE_BITCODE = NO
+
+// Set minimum iOS version (UE 5.7 requires iOS 15+)
+IPHONEOS_DEPLOYMENT_TARGET = 15.0
+            ]]>
+        </insert>
+    </buildSettings>
+
+    <!-- Additional linker flags -->
+    <buildSettings>
+        <insert>
+            <![CDATA[
+// Other linker flags - required for ObjC category loading
+OTHER_LDFLAGS = $(inherited) -ObjC
+            ]]>
+        </insert>
+    </buildSettings>
+</root>

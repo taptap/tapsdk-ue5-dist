@@ -1,0 +1,87 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    TapLeaderboard Android Plugin Configuration
+
+    依赖：com.taptap.sdk:tap-leaderboard-androidx（统一管理，此处不注入 Gradle 依赖）
+
+    UE Router 类：com.taptap.sdk.leaderboard.internal.ue.TapLeaderboardUERouter
+-->
+<root xmlns:android="http://schemas.android.com/apk/res/android">
+    <init>
+        <log text="TapLeaderboard: Android UPL loaded"/>
+    </init>
+
+    <proguardAdditions>
+        <insert>
+            <![CDATA[
+-keep class com.taptap.sdk.leaderboard.** { *; }
+-keep interface com.taptap.sdk.leaderboard.** { *; }
+
+-keep class com.taptap.sdk.leaderboard.internal.ue.** { *; }
+-keepclassmembers class com.taptap.sdk.leaderboard.internal.ue.** { *; }
+
+-keep @android.support.annotation.Keep class * { *; }
+-keep @androidx.annotation.Keep class * { *; }
+
+-keepclasseswithmembernames class * {
+    native <methods>;
+}
+
+-keepattributes *Annotation*
+-keepattributes Signature
+-keepattributes Exceptions
+-keepattributes SourceFile,LineNumberTable
+-renamesourcefileattribute SourceFile
+
+-keep class com.taptap.sdk.kit.internal.enginebridge.** { *; }
+            ]]>
+        </insert>
+    </proguardAdditions>
+
+    <buildGradleAdditions>
+        <insert>
+            <![CDATA[
+dependencies {
+    implementation 'com.taptap.sdk:tap-leaderboard-androidx:4.11.0'
+}
+            ]]>
+        </insert>
+    </buildGradleAdditions>
+
+    <!-- Import TapLeaderboard router -->
+    <gameActivityImportAdditions>
+        <insert>
+            <![CDATA[
+import com.taptap.sdk.leaderboard.internal.ue.TapLeaderboardUERouter;
+import com.taptap.sdk.leaderboard.androidx.TapTapLeaderboard;
+import com.taptap.sdk.leaderboard.callback.ITapTapLeaderboardShareCallback;
+import com.taptap.sdk.kit.internal.enginebridge.EngineBridgeCallback;
+            ]]>
+        </insert>
+    </gameActivityImportAdditions>
+
+    <!-- routeToTapLeaderboard 方法注入 GameActivity -->
+    <gameActivityClassAdditions>
+        <insert>
+            <![CDATA[
+    // The Android SDK keeps this callback in a SoftReference. GameActivity must retain
+    // it so image sharing can still report its result after a garbage collection.
+    private ITapTapLeaderboardShareCallback tapLeaderboardShareCallback;
+
+    public String routeToTapLeaderboard(String requestJson, EngineBridgeCallback callback) {
+        try {
+            String result = TapLeaderboardUERouter.route(this, requestJson, callback);
+            if ("setShareCallback".equals(new org.json.JSONObject(requestJson).optString("method"))) {
+                tapLeaderboardShareCallback = TapTapLeaderboard.getShareCallback();
+            }
+            return result;
+        } catch (Exception e) {
+            android.util.Log.e("TapSDK_UE", "TapLeaderboard route error: " + e.getMessage(), e);
+            return "{\"success\":false,\"message\":\"" + e.getMessage() + "\"}";
+        }
+    }
+            ]]>
+        </insert>
+    </gameActivityClassAdditions>
+
+</root>

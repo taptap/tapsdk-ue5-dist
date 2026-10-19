@@ -1,0 +1,16 @@
+{
+	"FileVersion": 3,
+	"Version": 1,
+	"VersionName": "4.11.0",
+	"FriendlyName": "TapProfile",
+	"Description": "TapTap Profile SDK - shared dependency for TapRelation, TapRelationLite, TapLeaderboard",
+	"Category": "TapSDK",
+	"CreatedBy": "TapTap",
+	"Modules": [
+		{
+			"Name": "TapProfile",
+			"Type": "Runtime",
+			"LoadingPhase": "Default"
+		}
+	]
+}

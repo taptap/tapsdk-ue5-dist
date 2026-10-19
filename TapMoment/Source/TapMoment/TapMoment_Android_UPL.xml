@@ -1,0 +1,101 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    TapMoment Android Plugin Configuration
+    Remote Dependency: com.taptap.sdk:tap-moment:4.11.0
+
+    桥接设计：routeToTapMoment(json, callback) 单一方法路由（对齐 Unity + TapCloudSave 模式）
+    - GameActivity 持有 BridgeMomentServiceImpl 实例（mMomentService），**不经 EngineBridge 反射注册**
+    - 原因：Moment 的 setCallback 需要将 EngineBridgeCallbackProxy 直接传入 setCallback(callback)，
+      而 EngineBridge.execCommand 在 UE 模式下固定走单参 nativeOnResult，无法透传自定义 proxy。
+    - 因此 BridgeMomentService 不注册到 EngineBridge，所有调用通过 routeToTapMoment 直接转发。
+-->
+<root xmlns:android="http://schemas.android.com/apk/res/android">
+    <init>
+        <log text="TapMoment: tap-moment"/>
+    </init>
+
+    <proguardAdditions>
+        <insert>
+            <![CDATA[
+-keep class com.taptap.sdk.moment.** { *; }
+-keep interface com.taptap.sdk.moment.** { *; }
+-keep class com.taptap.sdk.moment.unity.** { *; }
+-keepclassmembers class com.taptap.sdk.moment.unity.** { *; }
+-keepclasseswithmembernames class * { native <methods>; }
+            ]]>
+        </insert>
+    </proguardAdditions>
+
+    <buildGradleAdditions>
+        <insert>
+            <![CDATA[
+dependencies {
+    implementation 'com.taptap.sdk:tap-moment:4.11.0'
+}
+            ]]>
+        </insert>
+    </buildGradleAdditions>
+
+    <gameActivityImportAdditions>
+        <insert>
+            <![CDATA[
+import com.taptap.sdk.moment.unity.BridgeMomentServiceImpl;
+import com.taptap.sdk.kit.internal.enginebridge.EngineBridgeCallback;
+            ]]>
+        </insert>
+    </gameActivityImportAdditions>
+
+    <gameActivityClassAdditions>
+        <insert>
+            <![CDATA[
+    private BridgeMomentServiceImpl mMomentService;
+
+    private BridgeMomentServiceImpl getMomentService() {
+        if (mMomentService == null) { mMomentService = new BridgeMomentServiceImpl(); }
+        return mMomentService;
+    }
+
+    public void routeToTapMoment(String requestJson, EngineBridgeCallback callback) {
+        try {
+            org.json.JSONObject req = new org.json.JSONObject(requestJson);
+            String method  = req.getString("method");
+            String argsStr = req.optString("args", "");
+            switch (method) {
+                case "openMoment":
+                    getMomentService().openMoment();
+                    break;
+                case "openScene":
+                    getMomentService().openScene(
+                        new org.json.JSONObject(argsStr).getString("sceneId"));
+                    break;
+                case "close":
+                    getMomentService().close();
+                    break;
+                case "closeWithConfirmWindow": {
+                    org.json.JSONObject a = new org.json.JSONObject(argsStr);
+                    getMomentService().closeWithConfirmWindow(
+                        a.optString("title"), a.optString("content"));
+                    break;
+                }
+                case "fetchNotification":
+                    getMomentService().fetchNotification();
+                    break;
+                case "publish":
+                    getMomentService().publish(
+                        new org.json.JSONObject(argsStr).getString("publishMetaData"));
+                    break;
+                case "setCallback":
+                    getMomentService().setCallback(callback);
+                    break;
+                default:
+                    android.util.Log.w("TapSDK_UE", "TapMoment: unknown method: " + method);
+            }
+        } catch (Exception e) {
+            android.util.Log.e("TapSDK_UE", "TapMoment route error: " + e.getMessage(), e);
+        }
+    }
+            ]]>
+        </insert>
+    </gameActivityClassAdditions>
+
+</root>
