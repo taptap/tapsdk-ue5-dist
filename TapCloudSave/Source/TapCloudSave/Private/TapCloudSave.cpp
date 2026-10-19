@@ -7,8 +7,6 @@
 #include "Misc/Paths.h"
 #include "TapCloudSaveCallbackManager.h"
 
-static const FString TapCloudSaveVersion = TEXT("4.10.3-beta.2");
-
 namespace
 {
 	bool FireErrorIfFail(bool bCondition, int32 Code, const FString& Msg, const FTapOnArchiveError& OnError)
@@ -37,7 +35,7 @@ namespace
 
 }
 
-FString UTapCloudSave::GetVersion() { return TapCloudSaveVersion; }
+FString UTapCloudSave::GetVersion() { return TapCloudSave_VERSION; }
 
 void UTapCloudSave::RegisterCloudSaveCallback(TScriptInterface<ITapCloudSaveCallback> Callback)
 {

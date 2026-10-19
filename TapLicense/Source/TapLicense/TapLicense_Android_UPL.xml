@@ -3,7 +3,7 @@
     TapLicense Android Plugin Configuration
     This file configures the TapLicense SDK integration for Android builds in Unreal Engine.
 
-    Remote Dependency: com.taptap.sdk:tap-license:4.11.0-beta.3
+    Remote Dependency: com.taptap.sdk:tap-license:4.11.0
     VERIFY: 以移动端发布的实际 Maven 坐标与版本为准
 
     TapLicense provides game license verification and DLC management:
@@ -13,7 +13,7 @@
 -->
 <root xmlns:android="http://schemas.android.com/apk/res/android">
     <init>
-        <log text="TapLicense: tap-license:4.11.0-beta.3"/>
+        <log text="TapLicense: tap-license:4.11.0"/>
     </init>
 
     <proguardAdditions>
@@ -74,7 +74,7 @@
         <insert>
             <![CDATA[
 dependencies {
-    implementation 'com.taptap.sdk:tap-license:4.11.0-beta.3'
+    implementation 'com.taptap.sdk:tap-license:4.11.0'
 }
             ]]>
         </insert>

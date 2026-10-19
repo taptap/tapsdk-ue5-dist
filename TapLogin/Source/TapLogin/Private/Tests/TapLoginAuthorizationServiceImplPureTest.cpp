@@ -10,6 +10,20 @@
 #include "Internal/TapLoginInternal.h"
 #include "Internal/Http/TapHttpTime.h"
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FTapLoginVersionTest,
+	"TapSDK.Release.Version.Login",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FTapLoginVersionTest::RunTest(const FString&)
+{
+	const bool bWasInitialized = FTapLoginInternal::IsInitialized();
+	TestEqual(TEXT("Login version follows the packaged plugin descriptor"),
+		FTapLoginInternal::GetVersion(), FString(TapLogin_VERSION));
+	TestEqual(TEXT("Reading the version does not initialize Login"),
+		FTapLoginInternal::IsInitialized(), bWasInitialized);
+	return true;
+}
+
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FTapLoginAuthImplNoTokenTest,
 	"TapLogin.Auth.Pure.Impl.NoToken",

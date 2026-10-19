@@ -209,22 +209,7 @@ void FTapTapSDK::InitConfigured(const FTapTapSdkOptions& Config)
 
 FString FTapTapSDK::GetVersion()
 {
-	FString CoreVersion = TEXT("1.0.0");
-	FString PlatformVersion;
-
-	if (PlatformImpl.IsValid())
-	{
-		PlatformVersion = PlatformImpl->GetPlatformVersion();
-	}
-	else
-	{
-		PlatformVersion = TEXT("Unknown");
-	}
-
-	return FString::Printf(TEXT("%s-%s-%s"),
-		*CoreVersion,
-		TapPlatform::GetName(),
-		*PlatformVersion);
+	return TapCore_VERSION;
 }
 
 bool FTapTapSDK::IsInitialized()
@@ -293,6 +278,24 @@ void FTapTapSDK::RemoveInitCallback(ITapInitCallback* Callback)
 	FScopeLock Lock(&InitCallbackLock);
 	InitCallbacks.Remove(Callback);
 	UE_LOG(LogTapCore, Log, TEXT("RemoveInitCallback completed, count=%d"), InitCallbacks.Num());
+}
+
+FString FTapCoreInternal::GetPlatformName()
+{
+	return TapPlatform::GetName();
+}
+
+FString FTapCoreInternal::GetNativeSDKVersion()
+{
+	// The initialization page needs this before Init; constructing the platform
+	// implementation does not initialize or authenticate the native SDK.
+	if (!FTapTapSDK::PlatformImpl.IsValid())
+	{
+		FTapTapSDK::CreatePlatformImpl();
+	}
+	return FTapTapSDK::PlatformImpl.IsValid()
+		? FTapTapSDK::PlatformImpl->GetPlatformVersion()
+		: FString();
 }
 
 uint64 FTapCoreInternal::GetInitAttemptId()

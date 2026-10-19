@@ -23,7 +23,7 @@ public:
 	virtual void Init(const FTapTapSdkOptions& Config) override;
 	virtual FString GetPlatformVersion() const override;
 	virtual bool IsInitialized() const override;
-	virtual void OnInitResult(bool bSuccess) override { bIsInitialized = bSuccess; }
+	virtual void OnInitResult(bool bSuccess) override;
 	virtual FString GetPlatformName() const override;
 	virtual void UpdateLanguage(ETapLanguage Language) override;
 	virtual void RequestGatekeeperValidation(const FTapTapSdkOptions& Config) override;

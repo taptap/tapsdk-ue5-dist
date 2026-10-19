@@ -2,7 +2,7 @@
 <!--
     TapBattle Android Plugin Configuration
 
-    Remote Dependency: com.taptap.sdk:tap-battle:4.11.0-beta.3
+    Remote Dependency: com.taptap.sdk:tap-battle:4.11.0
 
     This UPL pulls tap-battle directly. The UE Router lives in
     com.taptap.sdk.battle.internal.ue.TapBattleUERouter.
@@ -13,7 +13,7 @@
 -->
 <root xmlns:android="http://schemas.android.com/apk/res/android">
     <init>
-        <log text="TapBattle: tap-battle:4.11.0-beta.3"/>
+        <log text="TapBattle: tap-battle:4.11.0"/>
     </init>
 
     <proguardAdditions>
@@ -52,7 +52,7 @@
 dependencies {
     // Keep this version aligned with Android/sdk/tap-battle/module.json.
     // It must be published with TapBattleUERouter included.
-    implementation 'com.taptap.sdk:tap-battle:4.11.0-beta.3'
+    implementation 'com.taptap.sdk:tap-battle:4.11.0'
 }
             ]]>
         </insert>

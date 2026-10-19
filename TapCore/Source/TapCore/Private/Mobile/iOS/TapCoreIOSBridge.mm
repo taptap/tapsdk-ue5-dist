@@ -348,9 +348,17 @@ static TapCoreInitCallback* _initCallback = nil;
     NSLog(@"[TapCoreIOSBridge] Setting platform: %@ version: %@", platform, version);
 
 #if USE_REAL_SDK
-    // Note: TapTapSDK doesn't have a setPlatform method in current version
-    // Platform info is automatically collected by the SDK
-    NSLog(@"[TapCoreIOSBridge] Platform info noted (SDK auto-collects this)");
+    // Match Unity's BridgeCoreService: append the engine SDK version to X-UA.
+    Class managerClass = NSClassFromString(@"TapTapUAManager");
+    SEL appendSelector = NSSelectorFromString(@"append:version:");
+    if ([managerClass respondsToSelector:appendSelector]) {
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Warc-performSelector-leaks"
+        [managerClass performSelector:appendSelector withObject:platform withObject:version];
+#pragma clang diagnostic pop
+    } else {
+        NSLog(@"[TapCoreIOSBridge] TapTapUAManager.append:version: is unavailable");
+    }
 #endif
 }
 

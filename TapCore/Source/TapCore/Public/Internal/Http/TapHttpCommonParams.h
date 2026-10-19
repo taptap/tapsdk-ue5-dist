@@ -84,6 +84,9 @@ public:
 	 */
 	static FString GetSDKVersion();
 
+	/** SDK User-Agent shared by HTTP requests and native module initialization. */
+	static FString GenerateUserAgent();
+
 	/**
 	 * Get the client ID configured at Initialize() time.
 	 * Used by modules (e.g. TapCompliance) that need to inject client_id
@@ -127,12 +130,6 @@ private:
 	 * @return Language code (e.g., "zh_CN", "en_US")
 	 */
 	static FString GetLanguage();
-
-	/**
-	 * Generate User-Agent string
-	 * @return User-Agent string
-	 */
-	static FString GenerateUserAgent();
 
 	/**
 	 * Generate HMAC-SHA256 signature

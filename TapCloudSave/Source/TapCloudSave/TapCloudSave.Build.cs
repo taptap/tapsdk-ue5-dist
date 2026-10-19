@@ -2,6 +2,9 @@
 
 using UnrealBuildTool;
 using System.IO;
+#if UE_5_0_OR_LATER
+using EpicGames.Core;
+#endif
 
 public class TapCloudSave : ModuleRules
 {
@@ -13,6 +16,10 @@ public class TapCloudSave : ModuleRules
 			PCHUsage = ModuleRules.PCHUsageMode.NoPCHs;
 		}
 		bUseUnity = false;
+
+		FileReference fileRef = new FileReference(Path.Combine(PluginDirectory, Name + ".uplugin"));
+		PluginInfo plugin = new PluginInfo(fileRef, PluginType.Project);
+		PublicDefinitions.Add(Name + "_VERSION=TEXT(\"" + plugin.Descriptor.VersionName + "\")");
 
 		PublicIncludePaths.Add(Path.GetFullPath(Path.Combine(ModuleDirectory, "Public")));
 		PrivateIncludePaths.Add(Path.GetFullPath(Path.Combine(ModuleDirectory, "Private")));

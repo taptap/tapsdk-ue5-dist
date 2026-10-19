@@ -99,32 +99,20 @@ TapAccount account = TapLogin.getCurrentAccount();
 
 ## iOS 配置
 
-### 1. CocoaPods 远程依赖
+### 1. 随插件提供的原生依赖
 
-**配置文件**: `TapLogin_IOS_UPL.xml`
-
-**Podfile 配置**:
-```ruby
-# TapTap 登录 SDK
-pod 'TapLoginSDK', '~> 3.0'
-
-# 或者指定具体版本
-# pod 'TapLoginSDK', '3.x.x'
-
-# TapTap 核心 SDK（如果需要）
-# pod 'TapCommonSDK', '~> 3.0'
-```
+`Source/TapLogin/TapLogin.Build.cs` 链接 `Source/ThirdParty/iOS/Frameworks/TapTapLoginSDK.xcframework`，并打包 `TapTapLoginResource.bundle`。基础依赖由 `TapCore` 提供，使用与本次 UE5 发布配套的原生 SDK，无需另行添加旧版 CocoaPods 依赖。
 
 ### 2. Info.plist 配置
 
-**URL Scheme**:
+在项目的 iOS 工程配置中手动添加以下内容；插件不会自动注入。将 `YOUR_CLIENT_ID` 替换为 SDK 初始化使用的 Client ID，保留 `tt` 前缀，并检查最终应用的 `Info.plist`。
 ```xml
 <key>CFBundleURLTypes</key>
 <array>
     <dict>
         <key>CFBundleURLSchemes</key>
         <array>
-            <string>tapsdk</string>
+            <string>ttYOUR_CLIENT_ID</string>
         </array>
         <key>CFBundleURLName</key>
         <string>com.taptap.sdk.login</string>
@@ -135,6 +123,7 @@ pod 'TapLoginSDK', '~> 3.0'
 <array>
     <string>tapsdk</string>
     <string>tapiosdk</string>
+    <string>taptap</string>
 </array>
 ```
 
@@ -147,35 +136,9 @@ pod 'TapLoginSDK', '~> 3.0'
 - AuthenticationServices.framework
 - WebKit.framework
 
-### 4. Objective-C++ 桥接（待实现）
+### 4. Objective-C++ 桥接
 
-**Objective-C 类**: `TapLogin`
-
-**主要方法**:
-```objc
-// 初始化
-[TapLogin initWithClientId:@"xxx" region:@"CN"];
-
-// 登录
-[TapLogin loginWithScopes:@[@"public_profile"]
-                  callback:^(TapAccount *account, NSError *error) {
-    // 处理登录结果
-}];
-
-// 一键登录
-[TapLogin oneKeyLoginWithPhoneToken:@"xxx"
-                           callback:^(TapAccount *account, NSError *error) {
-    // 处理登录结果
-}];
-
-// 登出
-[TapLogin logout];
-
-// 获取当前账号
-TapAccount *account = [TapLogin currentAccount];
-```
-
-**Objective-C++ 实现位置**: `TapLoginPlatformIOS.mm`（需要创建）
+`Source/TapLogin/Private/Platform/TapLoginPlatformIOS.cpp` 通过 `TapLoginIOSBridge.mm` 调用原生 `TapTapLogin`，处理登录、登出和账号查询。初始化时注册 `FIOSCoreDelegates::OnOpenURL`，将系统 URL 回调交给原生 SDK。
 
 ## Desktop 配置
 
@@ -333,7 +296,6 @@ iOS:
 ## 相关文件
 
 - `TapLogin_Android_UPL.xml` - Android UPL 配置
-- `TapLogin_IOS_UPL.xml` - iOS UPL 配置
 - `TapLogin.Build.cs` - 构建配置
 - `TapLoginPlatformAndroid.cpp` - Android 桥接实现
 - `TapLoginPlatformIOS.cpp` - iOS 桥接实现

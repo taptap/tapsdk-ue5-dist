@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
     TapReview Android Plugin Configuration
-    Remote Dependency: com.taptap.sdk:tap-review:4.11.0-beta.3
+    Remote Dependency: com.taptap.sdk:tap-review:4.11.0
     桥接：GameActivity helper routeToTapReview（对齐 TapUpdate 模式）
 -->
 <root xmlns:android="http://schemas.android.com/apk/res/android">
@@ -33,7 +33,7 @@
         <insert>
             <![CDATA[
 dependencies {
-    implementation 'com.taptap.sdk:tap-review:4.11.0-beta.3'
+    implementation 'com.taptap.sdk:tap-review:4.11.0'
 }
             ]]>
         </insert>

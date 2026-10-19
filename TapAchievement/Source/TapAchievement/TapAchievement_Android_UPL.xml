@@ -2,7 +2,7 @@
 <!--
     TapAchievement Android Plugin Configuration
 
-    Remote Dependency: com.taptap.sdk:tap-achievement:4.11.0-beta.3
+    Remote Dependency: com.taptap.sdk:tap-achievement:4.11.0
     VERIFY: 以移动端发布的实际 Maven 坐标与版本为准
 
     TapAchievement provides achievement unlock, increment, and showcase:
@@ -13,7 +13,7 @@
 -->
 <root xmlns:android="http://schemas.android.com/apk/res/android">
     <init>
-        <log text="TapAchievement: tap-achievement:4.11.0-beta.3"/>
+        <log text="TapAchievement: tap-achievement:4.11.0"/>
     </init>
 
     <proguardAdditions>
@@ -73,7 +73,7 @@
         <insert>
             <![CDATA[
 dependencies {
-    implementation 'com.taptap.sdk:tap-achievement:4.11.0-beta.3'
+    implementation 'com.taptap.sdk:tap-achievement:4.11.0'
 }
             ]]>
         </insert>

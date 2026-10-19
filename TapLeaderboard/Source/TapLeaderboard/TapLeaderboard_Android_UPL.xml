@@ -42,7 +42,7 @@
         <insert>
             <![CDATA[
 dependencies {
-    implementation 'com.taptap.sdk:tap-leaderboard-androidx:4.11.0-beta.3'
+    implementation 'com.taptap.sdk:tap-leaderboard-androidx:4.11.0'
 }
             ]]>
         </insert>

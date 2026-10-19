@@ -122,6 +122,7 @@ void FTapCoreiOS::CalliOSInit(const FTapTapSdkOptions& Config)
 		NSString* nsConfigJson = ConfigJson.GetNSString();
 
 		// Call Pure Objective-C bridge
+		[TapCoreIOSBridge setPlatform:@"TapSDK-UE" version:FTapTapSDK::GetVersion().GetNSString()];
 		[TapCoreIOSBridge initWithConfig:nsConfigJson completion:^(BOOL success, NSString* errorMsg) {
 			if (FTapCoreInternal::GetInitAttemptId() != AttemptId) return;
 

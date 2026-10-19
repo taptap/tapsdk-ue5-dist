@@ -9,13 +9,13 @@
 
 #include "TapTapSdkOptions.h"
 #include "Internal/TapSdkConfigState.h"
+#include "Internal/Http/TapHttpCommonParams.h"
 #include "TapLogin.h"
 #include "Internal/TapLoginInternal.h"
 
 #include "Async/Async.h"
 #include "Dom/JsonObject.h"
 #include "HAL/PlatformMisc.h"
-#include "Misc/EngineVersion.h"
 #include "Misc/FileHelper.h"
 #include "Misc/Paths.h"
 #include "Serialization/JsonReader.h"
@@ -62,7 +62,7 @@ namespace
 
 		Obj->SetStringField(TEXT("client_id"),      Cfg.ClientID);
 		Obj->SetStringField(TEXT("client_token"),   Cfg.ClientToken);
-		Obj->SetStringField(TEXT("ua"),             FString::Printf(TEXT("TapSDK-UE5/%s"), *FEngineVersion::Current().ToString()));
+		Obj->SetStringField(TEXT("ua"),             FTapHttpCommonParams::GenerateUserAgent());
 		Obj->SetStringField(TEXT("lang"),           TEXT("zh-CN"));
 		Obj->SetStringField(TEXT("platform"),       TEXT("PC"));
 		Obj->SetStringField(TEXT("device_id"),      FPlatformMisc::GetLoginId());

@@ -2,7 +2,7 @@
 <!--
     TapUpdate Android Plugin Configuration
 
-    Remote Dependency: com.taptap.sdk:tap-update:4.11.0-beta.3
+    Remote Dependency: com.taptap.sdk:tap-update:4.11.0
 
     桥接方式：GameActivity helper（对齐 TapAchievement / TapLogin 路径 A）
     - gameActivityOnCreateAdditions: EngineBridge.init + registerService
@@ -11,7 +11,7 @@
 -->
 <root xmlns:android="http://schemas.android.com/apk/res/android">
     <init>
-        <log text="TapUpdate: tap-update:4.11.0-beta.3"/>
+        <log text="TapUpdate: tap-update:4.11.0"/>
     </init>
 
     <proguardAdditions>
@@ -41,7 +41,7 @@
         <insert>
             <![CDATA[
 dependencies {
-    implementation 'com.taptap.sdk:tap-update:4.11.0-beta.3'
+    implementation 'com.taptap.sdk:tap-update:4.11.0'
 }
             ]]>
         </insert>

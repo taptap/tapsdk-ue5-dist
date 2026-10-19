@@ -5,10 +5,13 @@
 #if WITH_DEV_AUTOMATION_TESTS && (PLATFORM_WINDOWS || PLATFORM_MAC || PLATFORM_LINUX)
 
 #include "Dom/JsonObject.h"
+#include "TapCore.h"
 #include "Internal/TapSdkConfigState.h"
 #include "Misc/ConfigCacheIni.h"
 #include "Misc/ScopeExit.h"
 #include "Misc/ScopeLock.h"
+#include "Serialization/JsonReader.h"
+#include "Serialization/JsonSerializer.h"
 #include "Internal/Platform/TapOpenlog.h"
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FTapOpenlogGameVersionTest,
@@ -55,6 +58,18 @@ bool FTapOpenlogGameVersionTest::RunTest(const FString&)
 	FTapOpenlog::CollectGeneralParameters(Common);
 	TestEqual(TEXT("OpenLog should use ProjectVersion even when SDK GameVersion is supplied"),
 		Common->GetStringField(TEXT("app_version")), FString(TEXT("1.2.3-project")));
+	TSharedPtr<FJsonObject> StartConfig;
+	const TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(FTapOpenlog::BuildStartConfig(Common));
+	if (!TestTrue(TEXT("OpenLog start configuration is valid JSON"),
+		FJsonSerializer::Deserialize(Reader, StartConfig) && StartConfig.IsValid()))
+	{
+		return false;
+	}
+	TestEqual(TEXT("OpenLog duration reports the UE5 SDK version independently of GameVersion"),
+		StartConfig->GetObjectField(TEXT("app_duration"))->GetStringField(TEXT("tapsdk_version")),
+		FTapTapSDK::GetVersion());
+	TestEqual(TEXT("OpenLog User-Agent uses the UE5 SDK version"),
+		StartConfig->GetStringField(TEXT("ua")), FString::Printf(TEXT("TapSDK-UE5/%s"), *FTapTapSDK::GetVersion()));
 
 	Config.GameVersion.Empty();
 	FTapSdkConfigState::SetCurrentConfig(Config);

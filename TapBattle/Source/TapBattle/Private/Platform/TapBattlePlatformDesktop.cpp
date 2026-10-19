@@ -8,13 +8,13 @@
 #include "TapOnlineBattleCallbackManager.h"
 #include "TapTapSdkOptions.h"
 #include "Internal/TapSdkConfigState.h"
+#include "Internal/Http/TapHttpCommonParams.h"
 #include "TapLogin.h"
 
 #include "Async/Async.h"
 #include "Dom/JsonObject.h"
 #include "TapJsonCompat.h"
 #include "Misc/Paths.h"
-#include "Misc/EngineVersion.h"
 #include "HAL/PlatformMisc.h"
 #if PLATFORM_WINDOWS
 #include "Launcher/TapLauncher.h"
@@ -445,7 +445,7 @@ namespace
 		Root->SetNumberField(TEXT("logToConsole"), Config.bEnableLog ? 1 : 0);
 		Root->SetNumberField(TEXT("logLevel"), Config.bEnableLog ? 1 : 3);
 		Root->SetStringField(TEXT("dataDir"), FPaths::Combine(FPaths::ProjectSavedDir(), TEXT("onlinebattle_") + Config.ClientID));
-		Root->SetStringField(TEXT("ua"), FString::Printf(TEXT("TapSDK-UE5/%s"), *FEngineVersion::Current().ToString()));
+		Root->SetStringField(TEXT("ua"), FTapHttpCommonParams::GenerateUserAgent());
 		Root->SetStringField(TEXT("lang"), LanguageToString(Config.PreferredLanguage));
 		Root->SetStringField(TEXT("platform"), TEXT("PC"));
 		Root->SetStringField(TEXT("deviceId"), FPlatformMisc::GetLoginId());

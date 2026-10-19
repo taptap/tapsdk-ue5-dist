@@ -1,7 +1,7 @@
 {
 	"FileVersion": 3,
 	"Version": 1,
-	"VersionName": "4.11.0-beta.3",
+	"VersionName": "4.11.0",
 	"FriendlyName": "TapLicense",
 	"Description": "TapSDK License & DLC ownership module (Win64 real / mobile bridge / desktop stub)",
 	"Category": "TapSDK",

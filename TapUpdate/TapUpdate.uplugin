@@ -1,7 +1,7 @@
 {
 	"FileVersion": 3,
 	"Version": 1,
-	"VersionName": "4.11.0-beta.3",
+	"VersionName": "4.11.0",
 	"FriendlyName": "TapUpdate",
 	"Description": "TapSDK Update module (Android only - triggers update UI via TapTap)",
 	"Category": "TapSDK",

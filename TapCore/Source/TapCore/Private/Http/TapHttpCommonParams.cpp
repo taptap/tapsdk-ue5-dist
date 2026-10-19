@@ -1,6 +1,7 @@
 // Copyright TapTap. All Rights Reserved.
 
 #include "Internal/Http/TapHttpCommonParams.h"
+#include "TapCore.h"
 #include "Internal/TapLogPrivacy.h"
 #include "Internal/Http/TapHttpTime.h"
 #include "Internal/Storage/TapDeviceId.h"
@@ -197,7 +198,7 @@ FString FTapHttpCommonParams::GetDeviceID()
 
 FString FTapHttpCommonParams::GetSDKVersion()
 {
-	return TEXT("1.0.0");
+	return FTapTapSDK::GetVersion();
 }
 
 FString FTapHttpCommonParams::GenerateNonce()

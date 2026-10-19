@@ -18,7 +18,7 @@ TMap<FString, FString> FTapHttpRequest::DefaultHeaders;
 bool FTapHttpRequest::bEnableCommonParams = false;
 bool FTapHttpRequest::bEnableSigning = false;
 FString FTapHttpRequest::ModuleName = TEXT("TapCore");
-FString FTapHttpRequest::ModuleVersion = TEXT("1.0.0");
+FString FTapHttpRequest::ModuleVersion = TapCore_VERSION;
 
 void FTapHttpRequest::Get(
 	const FString& URL,
@@ -239,7 +239,7 @@ namespace
 		HttpRequest->SetVerb(Method);
 		HttpRequest->SetURL(URL);
 		HttpRequest->SetTimeout(Timeout);
-		HttpRequest->SetHeader(TEXT("User-Agent"), TEXT("TapSDK-UE5/1.0.0"));
+		HttpRequest->SetHeader(TEXT("User-Agent"), FTapHttpCommonParams::GenerateUserAgent());
 		HttpRequest->SetHeader(TEXT("Accept"),     TEXT("application/json"));
 		for (const TPair<FString, FString>& KV : AllHeaders)
 		{
@@ -505,7 +505,7 @@ TSharedRef<IHttpRequest> FTapHttpRequest::CreateRequest(
 	HttpRequest->SetTimeout(Timeout);
 
 	// Set default headers
-	HttpRequest->SetHeader(TEXT("User-Agent"), TEXT("TapSDK-UE5/1.0.0"));
+	HttpRequest->SetHeader(TEXT("User-Agent"), FTapHttpCommonParams::GenerateUserAgent());
 	HttpRequest->SetHeader(TEXT("Accept"), TEXT("application/json"));
 
 	return HttpRequest;

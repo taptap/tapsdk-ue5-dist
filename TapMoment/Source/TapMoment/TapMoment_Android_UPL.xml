@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
     TapMoment Android Plugin Configuration
-    Remote Dependency: com.taptap.sdk:tap-moment:4.11.0-beta.3
+    Remote Dependency: com.taptap.sdk:tap-moment:4.11.0
 
     桥接设计：routeToTapMoment(json, callback) 单一方法路由（对齐 Unity + TapCloudSave 模式）
     - GameActivity 持有 BridgeMomentServiceImpl 实例（mMomentService），**不经 EngineBridge 反射注册**
@@ -30,7 +30,7 @@
         <insert>
             <![CDATA[
 dependencies {
-    implementation 'com.taptap.sdk:tap-moment:4.11.0-beta.3'
+    implementation 'com.taptap.sdk:tap-moment:4.11.0'
 }
             ]]>
         </insert>

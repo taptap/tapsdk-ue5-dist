@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
     TapShare Android Plugin Configuration
-    Remote Dependency: com.taptap.sdk:tap-share:4.11.0-beta.3
+    Remote Dependency: com.taptap.sdk:tap-share:4.11.0
 
     桥接设计：GameActivity helper shareToTapTap(...) 直接构造 TapTapShareBuilder 并 share()
     - 分享为直接 native API（无 EngineBridge service / 无 Unity 桥），返回 int 结果码同步回传 UE
@@ -29,7 +29,7 @@
         <insert>
             <![CDATA[
 dependencies {
-    implementation 'com.taptap.sdk:tap-share:4.11.0-beta.3'
+    implementation 'com.taptap.sdk:tap-share:4.11.0'
 }
             ]]>
         </insert>

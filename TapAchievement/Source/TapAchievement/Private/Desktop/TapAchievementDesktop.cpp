@@ -23,10 +23,6 @@
 #include "TapBasicTypes.h"
 #include "TapLogin.h"
 
-#ifndef TapAchievement_VERSION
-#define TapAchievement_VERSION TEXT("1.0.0")
-#endif
-
 static TUniquePtr<FTapAchievementDesktop> GDesktop;
 
 namespace

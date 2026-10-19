@@ -3,7 +3,7 @@
     TapLogin Android Plugin Configuration
     This file configures the TapLogin SDK integration for Android builds in Unreal Engine.
 
-    Remote Dependency: com.taptap.sdk:tap-login:4.11.0-beta.3
+    Remote Dependency: com.taptap.sdk:tap-login:4.11.0
 
     TapLogin provides TapTap account authentication:
     - Login with scopes
@@ -12,7 +12,7 @@
 -->
 <root xmlns:android="http://schemas.android.com/apk/res/android">
     <init>
-        <log text="TapLogin: tap-login:4.11.0-beta.3"/>
+        <log text="TapLogin: tap-login:4.11.0"/>
     </init>
 
     <proguardAdditions>
@@ -71,7 +71,7 @@
         <insert>
             <![CDATA[
 dependencies {
-    implementation 'com.taptap.sdk:tap-login:4.11.0-beta.3'
+    implementation 'com.taptap.sdk:tap-login:4.11.0'
 }
             ]]>
         </insert>

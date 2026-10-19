@@ -164,7 +164,7 @@ TOptional<FTapAccount> FTapTapLogin::PeekCachedAccount()
 
 FString FTapTapLogin::GetVersion()
 {
-	return TEXT("1.0.0");
+	return TapLogin_VERSION;
 }
 
 // =========================================================

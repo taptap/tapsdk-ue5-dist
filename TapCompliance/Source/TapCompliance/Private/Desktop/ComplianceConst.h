@@ -115,7 +115,7 @@ namespace TapComplianceConst
 	// 模块标识
 	// =========================================================
 	const FString MODULE_NAME                  = TEXT("TapCompliance");
-	const FString MODULE_VERSION               = TEXT("1.0.0");
+	const FString MODULE_VERSION               = TapCompliance_VERSION;
 }
 
 #endif // PLATFORM_WINDOWS || PLATFORM_MAC || PLATFORM_LINUX

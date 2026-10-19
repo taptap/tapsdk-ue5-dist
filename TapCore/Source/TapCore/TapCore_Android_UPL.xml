@@ -3,7 +3,7 @@
     TapCore Android Plugin Configuration
     This file configures the TapCore SDK integration for Android builds in Unreal Engine.
 
-    Remote Dependency: com.taptap.sdk:tap-core:4.11.0-beta.3
+    Remote Dependency: com.taptap.sdk:tap-core:4.11.0
 
     TapCore is the foundation module of TapSDK, providing:
     - SDK initialization framework with DAG dependency management
@@ -14,7 +14,7 @@
 -->
 <root xmlns:android="http://schemas.android.com/apk/res/android">
     <init>
-        <log text="TapCore: tap-core:4.11.0-beta.3"/>
+        <log text="TapCore: tap-core:4.11.0"/>
     </init>
 
     <proguardAdditions>
@@ -110,7 +110,7 @@ repositories {
 
 dependencies {
     // TapCore remote dependency (includes tap-common, tap-initializer, tap-db, tap-openlog, tap-gid)
-    implementation 'com.taptap.sdk:tap-core:4.11.0-beta.3'
+    implementation 'com.taptap.sdk:tap-core:4.11.0'
 
     // AndroidX dependencies
     implementation 'androidx.appcompat:appcompat:1.6.1'

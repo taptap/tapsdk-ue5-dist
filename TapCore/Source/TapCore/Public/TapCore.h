@@ -40,8 +40,8 @@ public:
 	static void Init(const FTapTapSdkOptions& Config, const TArray<FTapSdkOption>& OtherOptions);
 
 	/**
-	 * Get TapSDK version
-	 * @return Version string (includes platform info)
+	 * Get the UE5 SDK version, available before initialization.
+	 * @return TapCore.uplugin VersionName (without native SDK or platform suffixes).
 	 */
 	static FString GetVersion();
 

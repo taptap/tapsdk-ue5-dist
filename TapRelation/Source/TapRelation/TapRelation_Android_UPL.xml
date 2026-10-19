@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
     TapRelation Android Plugin Configuration
-    Remote Dependency: com.taptap.sdk:tap-relation:4.11.0-beta.3
+    Remote Dependency: com.taptap.sdk:tap-relation:4.11.0
     桥接：GameActivity.routeToTapRelation(json, callback) 单一方法路由
     注意：BridgeRelationServiceImpl 直接持有实例（不走 EngineBridge 反射）
 -->
@@ -24,7 +24,7 @@
         <insert>
             <![CDATA[
 dependencies {
-    implementation 'com.taptap.sdk:tap-relation:4.11.0-beta.3'
+    implementation 'com.taptap.sdk:tap-relation:4.11.0'
 }
             ]]>
         </insert>

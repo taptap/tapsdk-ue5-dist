@@ -217,6 +217,10 @@ public:
 	static void SetEnableSigning(bool bEnable);
 
 private:
+#if WITH_DEV_AUTOMATION_TESTS
+	friend class FTapHttpRequestVersionTest;
+#endif
+
 	/** Default headers applied to all requests */
 	static TMap<FString, FString> DefaultHeaders;
 

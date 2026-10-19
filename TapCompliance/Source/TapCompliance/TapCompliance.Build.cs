@@ -21,6 +21,10 @@ public class TapCompliance : ModuleRules
 		// Disable Unity Build for platform-specific files to avoid compilation conflicts
 		bUseUnity = false;
 
+		FileReference fileRef = new FileReference(Path.Combine(PluginDirectory, Name + ".uplugin"));
+		PluginInfo plugin = new PluginInfo(fileRef, PluginType.Project);
+		PublicDefinitions.Add(Name + "_VERSION=TEXT(\"" + plugin.Descriptor.VersionName + "\")");
+
 		// Include paths
 		PublicIncludePaths.Add(Path.GetFullPath(Path.Combine(ModuleDirectory, "Public")));
 		PrivateIncludePaths.Add(Path.GetFullPath(Path.Combine(ModuleDirectory, "Private")));

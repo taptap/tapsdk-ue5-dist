@@ -1,7 +1,7 @@
 {
 	"FileVersion": 3,
 	"Version": 1,
-	"VersionName": "4.11.0-beta.3",
+	"VersionName": "4.11.0",
 	"FriendlyName": "TapShare",
 	"Description": "TapSDK Share module (Android + iOS)",
 	"Category": "TapSDK",

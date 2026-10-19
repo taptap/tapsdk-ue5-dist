@@ -6,6 +6,9 @@
 class TAPCORE_API FTapCoreInternal
 {
 public:
+	/** Diagnostic metadata for the Demo; does not initialize the SDK. */
+	static FString GetPlatformName();
+	static FString GetNativeSDKVersion();
 	static FString GetBaseUrl(bool bIsRND, ETapRegion Region);
 	static FString GetGatekeeperConfigUrl(const FString& Key);
 	static uint64 GetInitAttemptId();

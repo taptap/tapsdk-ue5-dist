@@ -3,7 +3,7 @@
     TapCloudSave Android Plugin Configuration
     This file configures the TapCloudSave SDK integration for Android builds in Unreal Engine.
 
-    Remote Dependency: com.taptap.sdk:tap-cloudsave:4.11.0-beta.3
+    Remote Dependency: com.taptap.sdk:tap-cloudsave:4.11.0
 
     NOTE: this UPL pulls tap-cloudsave (NOT tap-cloudsave-unity) because the
     UE Router (TapCloudSaveUERouter) lives in the tap-cloudsave module so it
@@ -19,7 +19,7 @@
 -->
 <root xmlns:android="http://schemas.android.com/apk/res/android">
     <init>
-        <log text="TapCloudSave: tap-cloudsave:4.11.0-beta.3"/>
+        <log text="TapCloudSave: tap-cloudsave:4.11.0"/>
     </init>
 
     <proguardAdditions>
@@ -78,7 +78,7 @@
         <insert>
             <![CDATA[
 dependencies {
-    implementation 'com.taptap.sdk:tap-cloudsave:4.11.0-beta.3'
+    implementation 'com.taptap.sdk:tap-cloudsave:4.11.0'
 }
             ]]>
         </insert>

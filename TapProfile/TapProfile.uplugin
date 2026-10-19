@@ -1,7 +1,7 @@
 {
 	"FileVersion": 3,
 	"Version": 1,
-	"VersionName": "4.11.0-beta.3",
+	"VersionName": "4.11.0",
 	"FriendlyName": "TapProfile",
 	"Description": "TapTap Profile SDK - shared dependency for TapRelation, TapRelationLite, TapLeaderboard",
 	"Category": "TapSDK",

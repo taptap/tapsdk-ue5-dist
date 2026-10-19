@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
     TapRelationLite Android Plugin Configuration
-    Remote Dependency: com.taptap.sdk:tap-relation-lite:4.11.0-beta.3
+    Remote Dependency: com.taptap.sdk:tap-relation-lite:4.11.0
     桥接：GameActivity.routeToTapRelationLite(json, callback) 单一方法路由
     注意：
     - BridgeRelationLiteServiceImpl 直接持有 callbackMap，但 routeToTapRelationLite 持有独立实例
@@ -27,7 +27,7 @@
         <insert>
             <![CDATA[
 dependencies {
-    implementation 'com.taptap.sdk:tap-relation-lite:4.11.0-beta.3'
+    implementation 'com.taptap.sdk:tap-relation-lite:4.11.0'
 }
             ]]>
         </insert>

@@ -5,6 +5,7 @@
 #include "TapCore.h"
 #include "Internal/TapCoreInternal.h"
 #include "Internal/Http/TapHttp.h"
+#include "Internal/Http/TapHttpCommonParams.h"
 #include "Internal/TapSdkChecker.h"
 #include "Internal/Platform/ITapCorePlatform.h"
 #include "Async/TaskGraphInterfaces.h"
@@ -17,9 +18,10 @@ namespace
 	public:
 		bool bInitialized = false;
 		int32 Requests = 0;
+		int32 InitResultNotifications = 0;
 		virtual void Init(const FTapTapSdkOptions&) override { if (!bInitialized) ++Requests; }
 		virtual bool IsInitialized() const override { return bInitialized; }
-		virtual void OnInitResult(bool bSuccess) override { bInitialized = bSuccess; }
+		virtual void OnInitResult(bool bSuccess) override { bInitialized = bSuccess; ++InitResultNotifications; }
 		virtual FString GetPlatformVersion() const override { return TEXT("test"); }
 		virtual FString GetPlatformName() const override { return TEXT("test"); }
 		virtual void UpdateLanguage(ETapLanguage) override {}
@@ -46,6 +48,10 @@ bool FTapCoreInitRetryTest::RunTest(const FString&)
 		return true;
 	}
 	auto OriginalPlatform = MoveTemp(FTapTapSDK::PlatformImpl);
+	TestEqual(TEXT("SDK version is available without a platform implementation"),
+		FTapTapSDK::GetVersion(), FString(TapCore_VERSION));
+	TestEqual(TEXT("HTTP uses the UE5 SDK version"),
+		FTapHttpCommonParams::GetSDKVersion(), FTapTapSDK::GetVersion());
 	auto OriginalCallbacks = MoveTemp(FTapTapSDK::InitCallbacks);
 	const bool bOriginalInitialized = FTapTapSDK::bIsInitialized;
 	const int32 OriginalError = FTapTapSDK::InitErrorCode;
@@ -71,6 +77,13 @@ bool FTapCoreInitRetryTest::RunTest(const FString&)
 	auto Platform = MakeUnique<FRetryPlatform>();
 	auto* Probe = Platform.Get();
 	FTapTapSDK::PlatformImpl = MoveTemp(Platform);
+	TestEqual(TEXT("Native platform version must not change the UE5 SDK version"),
+		FTapTapSDK::GetVersion(), FString(TapCore_VERSION));
+	TestEqual(TEXT("Demo diagnostics return the native platform version separately"),
+		FTapCoreInternal::GetNativeSDKVersion(), FString(TEXT("test")));
+	TestFalse(TEXT("Demo diagnostics include the current platform"),
+		FTapCoreInternal::GetPlatformName().IsEmpty());
+	TestEqual(TEXT("Reading native version must not initialize the platform SDK"), Probe->Requests, 0);
 	FTapTapSDK::bIsInitialized = false;
 	FTapTapSDK::InitErrorCode = 0;
 	FInitResults Results;
@@ -86,6 +99,7 @@ bool FTapCoreInitRetryTest::RunTest(const FString&)
 	FTapSdkChecker::SetClientInfoMatched(false);
 	FTapCoreInternal::NotifyInitResult(1001, TEXT("invalid_client"), First);
 	TestFalse(TEXT("Failure clears platform success"), Probe->bInitialized);
+	TestEqual(TEXT("Platform receives the current failure once"), Probe->InitResultNotifications, 1);
 	TestFalse(TEXT("Failure ends the in-progress state"), FTapTapSDK::bInitInProgress);
 	FTaskGraphInterface::Get().ProcessThreadUntilIdle(ENamedThreads::GameThread);
 	TestEqual(TEXT("First failure is delivered"), Results.Failures, 1);
@@ -100,12 +114,15 @@ bool FTapCoreInitRetryTest::RunTest(const FString&)
 	FTapCoreInternal::NotifyInitResult(0, TEXT("stale success"), First);
 	FTapCoreInternal::NotifyInitResult(1001, TEXT("stale failure"), First);
 	TestTrue(TEXT("Old results cannot finish the retry"), FTapCoreInternal::IsInitAttemptActive(Second));
+	TestEqual(TEXT("Stale results must not reapply platform metadata"), Probe->InitResultNotifications, 1);
 	FTaskGraphInterface::Get().ProcessThreadUntilIdle(ENamedThreads::GameThread);
 	TestEqual(TEXT("Old queued failure replay is suppressed"), LateSubscriber.Failures, 0);
 	FTapCoreInternal::NotifyInitResult(0, FString(), Second);
 	FTapCoreInternal::NotifyInitResult(1001, TEXT("duplicate failure"), Second);
 	FTapCoreInternal::NotifyInitResult(0, FString(), Second);
 	FTaskGraphInterface::Get().ProcessThreadUntilIdle(ENamedThreads::GameThread);
+	TestEqual(TEXT("Success updates the platform once before callbacks, ignoring duplicate results"),
+		Probe->InitResultNotifications, 2);
 	TestTrue(TEXT("Retry succeeds in both public and platform state"), FTapTapSDK::IsInitialized());
 	TestTrue(TEXT("Successful retry restores business API checks"), FTapSdkChecker::CheckInitialize(false));
 	TestEqual(TEXT("Final success is delivered exactly once"), Results.Successes, 1);
@@ -126,6 +143,27 @@ bool FTapCoreInitRetryTest::RunTest(const FString&)
 	TestTrue(TEXT("Existing 1002 fallback remains successful"), FTapTapSDK::IsInitialized());
 	AddExpectedError(TEXT("clientId"), EAutomationExpectedErrorFlags::Contains, 1);
 	TestFalse(TEXT("Cached fallback does not clear an invalid-client result"), FTapSdkChecker::CheckInitialize(false));
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FTapCoreNativeVersionTest,
+	"TapSDK.Core.Version.DiagnosticsDoNotInitializeSDK",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ClientContext | EAutomationTestFlags::EngineFilter)
+
+bool FTapCoreNativeVersionTest::RunTest(const FString&)
+{
+	const bool bWasInitialized = FTapTapSDK::IsInitialized();
+	const FString SDKVersion = FTapTapSDK::GetVersion();
+	const FString NativeVersion = FTapCoreInternal::GetNativeSDKVersion();
+	TestFalse(TEXT("Integrated native SDK supplies its version"), NativeVersion.IsEmpty());
+	TestTrue(TEXT("Native version must not be the old Desktop/Android placeholder"),
+		NativeVersion != TEXT("1.0.0-desktop") && NativeVersion != TEXT("1.0.0-android"));
+	TestEqual(TEXT("Reading native version preserves initialization state"),
+		FTapTapSDK::IsInitialized(), bWasInitialized);
+	TestEqual(TEXT("Reading native version preserves the UE5 SDK version"),
+		FTapTapSDK::GetVersion(), SDKVersion);
+	AddInfo(FString::Printf(TEXT("SDK Version: %s-%s-%s"),
+		*SDKVersion, *FTapCoreInternal::GetPlatformName(), *NativeVersion));
 	return true;
 }
 #endif

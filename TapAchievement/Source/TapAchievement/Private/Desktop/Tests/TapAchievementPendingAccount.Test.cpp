@@ -5,6 +5,7 @@
 
 #include "Desktop/TapAchievementDesktop.h"
 #include "TapAchievementCallbackManager.h"
+#include "Internal/Http/TapHttp.h"
 #include "HAL/FileManager.h"
 #include "Misc/Guid.h"
 #include "Misc/Paths.h"
@@ -20,6 +21,12 @@ bool FTapAchievementPendingAccountTest::RunTest(const FString&)
     Desktop.QueueFilePathForTest = FPaths::Combine(FPaths::ProjectSavedDir(), TEXT("Automation"),
         TEXT("achievement-queue-") + FGuid::NewGuid().ToString(EGuidFormats::Digits) + TEXT(".json"));
     ON_SCOPE_EXIT { IFileManager::Get().Delete(*Desktop.QueueFilePathForTest); };
+
+    Desktop.Initialize(FTapTapSdkOptions());
+    TestEqual(TEXT("Achievement tracker uses the packaged module version"),
+        Desktop.Tracker.GetProjectVersion(), FString(TapAchievement_VERSION));
+    TestEqual(TEXT("Achievement HTTP client uses the packaged module version"),
+        Desktop.HttpClient->GetConfig().ModuleVersion, FString(TapAchievement_VERSION));
 
     // Capture the production HTTP callbacks with A's request-time identity.
     // Mutate the caller's snapshot before completion to verify value ownership.

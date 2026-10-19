@@ -7,6 +7,7 @@
 #include "TapOnlineBattleCallbackManager.h"
 #include "TapTapSdkOptions.h"
 #include "Internal/TapSdkConfigState.h"
+#include "Internal/Http/TapHttpCommonParams.h"
 #include "TapLogin.h"
 #include "Internal/Storage/TapDeviceId.h"
 
@@ -14,7 +15,6 @@
 #include "Dom/JsonObject.h"
 #include "TapJsonCompat.h"
 #include "Misc/Paths.h"
-#include "Misc/EngineVersion.h"
 #include "HAL/FileManager.h"
 #include "HAL/PlatformMisc.h"
 #include "Serialization/JsonReader.h"
@@ -452,7 +452,7 @@ namespace
 		const FString DataDir = FPaths::ConvertRelativePathToFull(
 			FPaths::Combine(FPaths::ProjectSavedDir(), TEXT("onlinebattle_") + Config.ClientID));
 		IFileManager::Get().MakeDirectory(*DataDir, /*Tree=*/true);
-		const FString Ua = FString::Printf(TEXT("TapSDK-UE5/%s"), *FEngineVersion::Current().ToString());
+		const FString Ua = FTapHttpCommonParams::GenerateUserAgent();
 		// FPlatformMisc::GetLoginId() 在 iOS 上可能为空（如 IDFV 暂不可用）。改用
 		// 全 SDK 统一、保证非空且持久化的 FTapDeviceId，与 gatekeeper/openlog 对齐。
 		const FString DeviceId = FTapDeviceId::Get();

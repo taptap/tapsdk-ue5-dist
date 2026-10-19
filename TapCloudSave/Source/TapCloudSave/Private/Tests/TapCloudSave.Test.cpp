@@ -16,6 +16,17 @@
 #include "Misc/FileHelper.h"
 #include "Misc/Paths.h"
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FTapCloudSaveVersionTest,
+	"TapSDK.Release.Version.CloudSave",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FTapCloudSaveVersionTest::RunTest(const FString&)
+{
+	TestEqual(TEXT("CloudSave version is available without native initialization"),
+		UTapCloudSave::GetVersion(), FString(TapCloudSave_VERSION));
+	return true;
+}
+
 namespace
 {
 	void SetSdkInitializedForFacadeTest(bool bInitialized)

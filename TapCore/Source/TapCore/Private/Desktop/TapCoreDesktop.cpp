@@ -25,6 +25,7 @@
 #include "Misc/FileHelper.h"
 #include "Misc/Paths.h"
 #include "Internal/Platform/TapAppDuration.h"
+#include "Desktop/Openlog/TapOpenlogNativeAPI.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogTapDesktop, Log, All);
 
@@ -133,7 +134,7 @@ void FTapCoreDesktop::Init(const FTapTapSdkOptions& Config)
 
 FString FTapCoreDesktop::GetPlatformVersion() const
 {
-	return TEXT("1.0.0-desktop");
+	return FTapOpenlogNativeAPI::Load() ? FTapOpenlogNativeAPI::GetVersion() : FString();
 }
 
 bool FTapCoreDesktop::IsInitialized() const

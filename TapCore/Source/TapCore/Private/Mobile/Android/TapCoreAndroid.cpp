@@ -12,6 +12,7 @@
 #include "Internal/TapSdkOptionSerializerRegistry.h"
 #include "Android/AndroidJNI.h"
 #include "Android/AndroidApplication.h"
+#include "Android/AndroidJavaEnv.h"
 #include "Async/Async.h"
 #include "Misc/ConfigCacheIni.h"
 #include "Dom/JsonObject.h"
@@ -165,8 +166,45 @@ void FTapCoreAndroid::Init(const FTapTapSdkOptions& Config)
 
 FString FTapCoreAndroid::GetPlatformVersion() const
 {
-	// TODO: Get version from Android SDK via Router
-	return TEXT("1.0.0-android");
+	JNIEnv* Env = FAndroidApplication::GetJavaEnv();
+	if (!Env)
+	{
+		return FString();
+	}
+
+	jclass VersionClass = FAndroidApplication::FindJavaClass("com/taptap/sdk/core/BuildConfig");
+	if (Env->ExceptionCheck())
+	{
+		Env->ExceptionClear();
+	}
+	if (!VersionClass)
+	{
+		UE_LOG(LogTapAndroid, Warning, TEXT("Cannot read native SDK version: TapCore BuildConfig is unavailable"));
+		return FString();
+	}
+
+	jfieldID VersionField = Env->GetStaticFieldID(VersionClass, "VERSION_NAME", "Ljava/lang/String;");
+	if (Env->ExceptionCheck())
+	{
+		Env->ExceptionClear();
+	}
+	if (!VersionField)
+	{
+		Env->DeleteLocalRef(VersionClass);
+		UE_LOG(LogTapAndroid, Warning, TEXT("Cannot read native SDK version: VERSION_NAME is unavailable"));
+		return FString();
+	}
+
+	jstring Version = static_cast<jstring>(Env->GetStaticObjectField(VersionClass, VersionField));
+	Env->DeleteLocalRef(VersionClass);
+	if (Env->ExceptionCheck())
+	{
+		Env->ExceptionClear();
+		if (Version) Env->DeleteLocalRef(Version);
+		UE_LOG(LogTapAndroid, Warning, TEXT("Failed to read native SDK VERSION_NAME"));
+		return FString();
+	}
+	return FJavaHelper::FStringFromLocalRef(Env, Version);
 }
 
 bool FTapCoreAndroid::IsInitialized() const
@@ -182,6 +220,19 @@ bool FTapCoreAndroid::IsInitialized() const
 	}
 
 	return bIsInitialized;
+}
+
+void FTapCoreAndroid::OnInitResult(bool bSuccess)
+{
+	bIsInitialized = bSuccess;
+	if (bSuccess)
+	{
+		// Published native bridges overwrite this with gameVersion during init.
+		// Restore the UE5 SDK version before UE initialization callbacks run.
+		const FString SDKVersion = FTapTapSDK::GetVersion();
+		UE_LOG(LogTapAndroid, Log, TEXT("Reapplying SDK platform version after Android initialization: %s"), *SDKVersion);
+		SetPlatformAndVersionInternal(TEXT("TapSDK-UE"), SDKVersion);
+	}
 }
 
 FString FTapCoreAndroid::GetPlatformName() const
@@ -227,7 +278,7 @@ void FTapCoreAndroid::InitializeJNI()
 void FTapCoreAndroid::CallAndroidInit(const FTapTapSdkOptions& Config)
 {
 	const uint64 AttemptId = FTapCoreInternal::GetInitAttemptId();
-	SetPlatformAndVersionInternal(TEXT("TapSDK-UE"), Config.GameVersion.IsEmpty() ? TEXT("unknown") : Config.GameVersion);
+	SetPlatformAndVersionInternal(TEXT("TapSDK-UE"), FTapTapSDK::GetVersion());
 	SetSDKArtifactInternal(TEXT("UE5"));
 
 	JNIEnv* Env = FAndroidApplication::GetJavaEnv();
