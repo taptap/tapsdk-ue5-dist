@@ -13,6 +13,8 @@
 #include "Serialization/JsonReader.h"
 #include "Serialization/JsonSerializer.h"
 #include "Internal/Platform/TapOpenlog.h"
+#include "HAL/FileManager.h"
+#include "Misc/Paths.h"
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FTapOpenlogGameVersionTest,
 	"TapSDK.Core.OpenLog.GameVersion.UsesApplicationVersion",
@@ -30,6 +32,8 @@ bool FTapOpenlogGameVersionTest::RunTest(const FString&)
 	FString OriginalProjectVersion;
 	const bool bHadProjectVersion = GConfig->GetString(Section, TEXT("ProjectVersion"), OriginalProjectVersion, GGameIni);
 	const FTapTapSdkOptions OriginalConfig = FTapSdkConfigState::GetCurrentConfig();
+	const FString TestClientID = TEXT("Automation-") + FGuid::NewGuid().ToString(EGuidFormats::Digits);
+	const FString DataDir = FPaths::Combine(FPaths::ProjectSavedDir(), TEXT("OpenlogData_") + TestClientID);
 	FString OriginalLocale;
 	{
 		FScopeLock Lock(&FTapOpenlog::DynamicVarsMutex);
@@ -37,6 +41,7 @@ bool FTapOpenlogGameVersionTest::RunTest(const FString&)
 	}
 	ON_SCOPE_EXIT
 	{
+		IFileManager::Get().DeleteDirectory(*DataDir, false, true);
 		if (bHadProjectVersion)
 		{
 			GConfig->SetString(Section, TEXT("ProjectVersion"), *OriginalProjectVersion, GGameIni);
@@ -52,6 +57,7 @@ bool FTapOpenlogGameVersionTest::RunTest(const FString&)
 
 	GConfig->SetString(Section, TEXT("ProjectVersion"), TEXT("1.2.3-project"), GGameIni);
 	FTapTapSdkOptions Config;
+	Config.ClientID = TestClientID;
 	Config.GameVersion = TEXT("9.8.7-custom");
 	FTapSdkConfigState::SetCurrentConfig(Config);
 	TSharedRef<FJsonObject> Common = MakeShared<FJsonObject>();

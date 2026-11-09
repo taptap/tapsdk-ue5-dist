@@ -14,11 +14,13 @@
 #include "Serialization/JsonSerializer.h"
 #include "Serialization/JsonWriter.h"
 #include "Misc/Paths.h"
+#include "HAL/PlatformFileManager.h"
 #include "HAL/PlatformMemory.h"
 #include "HAL/PlatformMisc.h"
 #include "Framework/Application/SlateApplication.h"
 #include "Misc/ConfigCacheIni.h"
 #include "Misc/CoreDelegates.h"
+#include "Storage/TapEventStorage.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogTapOpenlog, Log, All);
 
@@ -42,6 +44,9 @@ void FTapOpenlog::Init()
 		return;
 	}
 
+	const FTapTapSdkOptions& StorageConfig = FTapSdkConfigState::GetCurrentConfig();
+	if (!FTapEventStorage::Get().Prepare(StorageConfig.ClientID, StorageConfig.Region)) return;
+
 	// 1. Load native library
 	if (!FTapOpenlogNativeAPI::Load())
 	{
@@ -58,6 +63,10 @@ void FTapOpenlog::Init()
 
 	// 3. Build start-config JSON
 	FString StartJson = BuildStartConfig(CommonObj);
+	if (StartJson.IsEmpty())
+	{
+		return;
+	}
 	UE_LOG(LogTapOpenlog, Log, TEXT("OpenLog start config: %s"), *TapLogPrivacy::Body(StartJson));
 
 	// 4. Set log level before calling OnAppStarted so that init logs are
@@ -226,7 +235,16 @@ FString FTapOpenlog::BuildStartConfig(const TSharedRef<FJsonObject>& CommonObj)
 	FString DataDir = FPaths::Combine(
 		FPaths::ProjectSavedDir(),
 		FString::Printf(TEXT("OpenlogData_%s"), *Cfg.ClientID));
+	DataDir = FPaths::ConvertRelativePathToFull(DataDir);
 	FPaths::NormalizeDirectoryName(DataDir);
+	// Like Unity, prepare the cache root before starting the native SDK.
+	IPlatformFile& PlatformFile = FPlatformFileManager::Get().GetPlatformFile();
+	if (!PlatformFile.CreateDirectoryTree(*DataDir) || !PlatformFile.DirectoryExists(*DataDir))
+	{
+		UE_LOG(LogTapOpenlog, Warning,
+			TEXT("Cannot create OpenLog data directory '%s'; native initialization skipped"), *DataDir);
+		return FString();
+	}
 
 	// UA string  (TapCore_VERSION macro defined in Build.cs from .uplugin)
 	FString UA = FString::Printf(TEXT("TapSDK-UE5/%s"), TapCore_VERSION);

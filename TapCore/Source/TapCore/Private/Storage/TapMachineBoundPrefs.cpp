@@ -9,30 +9,15 @@ namespace
 	const FString FINGERPRINT_KEY = TEXT("tap_machine_fp");
 }
 
-void FTapMachineBoundPrefs::Init(const FString& RelativePath)
+void FTapMachineBoundPrefs::Init(const FString& RelativePath, bool bPrivateFile)
 {
-	Prefs.Init(RelativePath);
 	Fingerprint = ComputeFingerprint();
+	Prefs.Init(RelativePath, bPrivateFile, Fingerprint);
+}
 
-	const FString StoredFP = Prefs.GetString(FINGERPRINT_KEY);
-
-	// Only trust a match when both sides are non-empty
-	if (!StoredFP.IsEmpty() && !Fingerprint.IsEmpty() && StoredFP == Fingerprint)
-	{
-		return; // Same machine — cache is valid
-	}
-
-	if (!StoredFP.IsEmpty())
-	{
-		UE_LOG(LogTapBasic, Warning,
-			TEXT("[MachBoundPrefs] Machine fingerprint mismatch, cache cleared (stored=%s, current=%s)"),
-			*StoredFP, *Fingerprint);
-		Prefs.Clear();
-		bWasInvalidated = true;
-	}
-
-	Prefs.Set(FINGERPRINT_KEY, Fingerprint);
-	Prefs.Save();
+bool FTapMachineBoundPrefs::EnsureReady()
+{
+	return Prefs.IsReady();
 }
 
 FString FTapMachineBoundPrefs::GetString(const FString& Key, const FString& Default) const

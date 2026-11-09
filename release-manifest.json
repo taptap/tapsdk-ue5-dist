@@ -1,8 +1,8 @@
 {
   "source_layout": "flat",
-  "version": "4.11.0",
+  "version": "4.11.1",
   "source_repository": "taptap/tapsdk-monorepo",
-  "source_ref": "2e8b81eaf46472969da5582748e63fbd09699177",
+  "source_ref": "0e6fe756be08daca36c8418bcc1032b5efe6a5a8",
   "engine_versions": [
     "5.7",
     "5.8"
@@ -26,26 +26,26 @@
     "TapUpdate"
   ],
   "archives": {
-    "TapSDK-UE5-TapAchievement-v4.11.0.zip": "f05336dd27b631f99459adb4ff8b96fffc1a12d9056709badf2f94f019c7341b",
-    "TapSDK-UE5-TapBattle-v4.11.0.zip": "d1f724baf32d3023f9056daf6ca314a7cfc9613eaabd04a78fd1e1e4e255bf23",
-    "TapSDK-UE5-TapCloudSave-v4.11.0.zip": "30a9dfb1f4d0de68721ca5f4984eb2e6eb19cc5c3b46de34526ef0743db5486a",
-    "TapSDK-UE5-TapCompliance-v4.11.0.zip": "fb87d0ae37fe671cfbe0f5f3bdfd28d5ea1330252a72215ef1aaf93ad23e9976",
-    "TapSDK-UE5-TapCore-v4.11.0.zip": "c5a80393892b90289e5c55371d8b837bdb82b0b40b7da979c36fa7be47f92a8f",
-    "TapSDK-UE5-TapLeaderboard-v4.11.0.zip": "5a7877e97464d4b74b59a926a410f6de5016c250c1843f33f335e0907c6302e1",
-    "TapSDK-UE5-TapLicense-v4.11.0.zip": "85087996a21f292f9a0cc81018d4a38624819b10131ef0b6eb1482970c6ffdbc",
-    "TapSDK-UE5-TapLogin-v4.11.0.zip": "db623192c604a293bb67a70f6eddc496ed96f08c3e41997e08fcc896d001f1c4",
-    "TapSDK-UE5-TapMoment-v4.11.0.zip": "b04639786db0fb8777b711ee4c5120fe5579fcdcc9d5511030430683ffecae7b",
-    "TapSDK-UE5-TapProfile-v4.11.0.zip": "39a2f4413ad2b90b0b0d227ebcf84b08485884e182f498395ed6d90d2ebd59eb",
-    "TapSDK-UE5-TapRelation-v4.11.0.zip": "f78168d0ec7bc584aa0e7275d42bd5851d3267cdc68535878de47c765d773a57",
-    "TapSDK-UE5-TapRelationLite-v4.11.0.zip": "7b928ea3c7775f49ec2524ab3c278da427dc6f7c040833aadc74a1fb4f922e4e",
-    "TapSDK-UE5-TapRep-v4.11.0.zip": "56ae4e19c73cb4a3b3692bb4c73a73a330d7ea02f44c6434052e1ae7f093202f",
-    "TapSDK-UE5-TapReview-v4.11.0.zip": "1d36e75ce19ab0645a28e30c2b39c3d75e61c992a04b2938c64e93534b8d1b67",
-    "TapSDK-UE5-TapShare-v4.11.0.zip": "5b1a2a3ec3cad180824910f014bb992f2ecbf1aa94ea04711f66193f47254f2a",
-    "TapSDK-UE5-TapUpdate-v4.11.0.zip": "59301654e7423f2ef15221f00fcf144fc30b332bde5468e640759cd820616db3"
+    "TapSDK-UE5-TapAchievement-v4.11.1.zip": "cdb12a79d7a5422ecba6812d14660b113c25de87b8a48e5b736c8820c0321b27",
+    "TapSDK-UE5-TapBattle-v4.11.1.zip": "30915a79679bc5a3ca432ac858cc212ead55983fe736894fec9b93efdfa76d51",
+    "TapSDK-UE5-TapCloudSave-v4.11.1.zip": "ccc6d1a95f0d30605f2285fca1dde3cce62610b6f5290af535abdcbb8d8be45a",
+    "TapSDK-UE5-TapCompliance-v4.11.1.zip": "95df9630d4cfaca83bab58362291ab76ec3ef8cbfe206a4677e58fcb9bbd456f",
+    "TapSDK-UE5-TapCore-v4.11.1.zip": "0cec8ea734b790eb408d4426b46bf7ec82e57e5ab59a558b78bcb902d8ee7629",
+    "TapSDK-UE5-TapLeaderboard-v4.11.1.zip": "40d81e0474e44419a1f52348927e475671af351f0b29f4d2278d44c818c731c6",
+    "TapSDK-UE5-TapLicense-v4.11.1.zip": "8d41da5e5a49109a94ce38a92d94eef3b21c0996207b23ba0e1982dc9fea0e46",
+    "TapSDK-UE5-TapLogin-v4.11.1.zip": "15cb5713840c8fbaabbb22c3469532c450b9456688d391cb681a2a5586e58987",
+    "TapSDK-UE5-TapMoment-v4.11.1.zip": "1a5b3ee847c7b63aa7e7d27742863389574f5ebbf1bfe7359cbd24ad2723bb9f",
+    "TapSDK-UE5-TapProfile-v4.11.1.zip": "a46dd8b4b04889eedb00a7f09c04631b71b67c7063de84c67978562d8747698a",
+    "TapSDK-UE5-TapRelation-v4.11.1.zip": "681cd49abb52ef197a776db4162cd95feee04d28acc394a301b237caad909407",
+    "TapSDK-UE5-TapRelationLite-v4.11.1.zip": "9888efc815bc5071490cb26c2d95ecb0ded08081d890a43fe96eae1b10ccb497",
+    "TapSDK-UE5-TapRep-v4.11.1.zip": "0772f94857e1e5fabc647b6103c7da4673e6596835955be053f89e5e3b5a00ed",
+    "TapSDK-UE5-TapReview-v4.11.1.zip": "5a8f13dc6ab98d83ce39cb554f73ef4f14e9c716cc7f433fbe93b09d7ee091a8",
+    "TapSDK-UE5-TapShare-v4.11.1.zip": "499e5af17f5e2f9d4f941b0050bee0d711654ea45439579c20b87ff3e808363c",
+    "TapSDK-UE5-TapUpdate-v4.11.1.zip": "c2dce0f77cf3abec84b7e72465bc49e53aeb054459f100fb7456d09ed1917600"
   },
   "native_dependencies": {
-    "android_version": "4.11.0",
-    "ios_version": "4.11.0",
-    "ios_source_ref": "4a57c4175481e2ff55299e1ba8f819d227b85544"
+    "android_version": "4.11.1",
+    "ios_version": "4.11.1",
+    "ios_source_ref": "0cb333d4f2584b406aa6d2fb2e40ce43a504c76c"
   }
 }

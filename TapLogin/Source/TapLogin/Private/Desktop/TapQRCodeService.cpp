@@ -63,6 +63,7 @@ FString FTapQRCodeService::GetDeviceInfo() const
 void FTapQRCodeService::RequestQRCode(const FString& ClientID, const FString& Scopes,
 	FOnQRCodeReady OnReady)
 {
+	StopPolling();
 	FString Endpoint = GetWebHost() + TEXT("/oauth2/v1/device/code");
 
 	// 获取 TapLogin 版本
@@ -95,53 +96,7 @@ void FTapQRCodeService::RequestQRCode(const FString& ClientID, const FString& Sc
 		Endpoint,
 		Headers,
 		FormBody,
-		FTapHttpRequestCompleteDelegate::CreateLambda([this, OnReady](const FTapHttpResponse& Result)
-		{
-			// HTTP 回调可能在非游戏线程, 需要切回游戏线程操作成员变量和 delegate
-			int32 StatusCode = Result.StatusCode;
-			FString ErrorMessage = Result.ErrorMessage;
-			bool bSuccess = Result.IsSuccess();
-			TSharedPtr<FJsonObject> JsonObject = Result.JsonObject;
-
-			AsyncTask(ENamedThreads::GameThread, [this, OnReady, StatusCode, ErrorMessage, bSuccess, JsonObject]()
-			{
-				UE_LOG(LogTemp, Verbose, TEXT("[QRService] Response - HTTP %d"), StatusCode);
-
-				if (bSuccess && JsonObject.IsValid())
-				{
-					// 服务端响应有 data 包装层: {"data":{...}, "success":true}
-					const TSharedPtr<FJsonObject>* DataObj = nullptr;
-					TSharedPtr<FJsonObject> Source = JsonObject;
-					if (JsonObject->TryGetObjectField(TEXT("data"), DataObj) && DataObj && (*DataObj).IsValid())
-					{
-						Source = *DataObj;
-					}
-
-					QRCodeData.DeviceCode = Source->GetStringField(TEXT("device_code"));
-					QRCodeData.QRCodeUrl = Source->GetStringField(TEXT("qrcode_url"));
-					QRCodeData.ExpiresIn = Source->GetIntegerField(TEXT("expires_in"));
-					QRCodeData.Interval = Source->GetIntegerField(TEXT("interval"));
-
-					if (QRCodeData.Interval <= 0)
-					{
-						QRCodeData.Interval = 5;
-					}
-
-					QRCodeExpireTime = FPlatformTime::Seconds() + QRCodeData.ExpiresIn;
-
-					UE_LOG(LogTapLogin, Log, TEXT("[QRService] QR code ready - expires: %ds, interval: %ds"),
-						QRCodeData.ExpiresIn, QRCodeData.Interval);
-
-					OnReady.ExecuteIfBound(true, QRCodeData);
-				}
-				else
-				{
-					UE_LOG(LogTapLogin, Error, TEXT("[QRService] QR code request failed: %s (HTTP %d)"),
-						*ErrorMessage, StatusCode);
-					OnReady.ExecuteIfBound(false, QRCodeData);
-				}
-			});
-		}),
+		MakeQRCodeCallback(OnReady),
 		30.0f
 	);
 }
@@ -172,6 +127,8 @@ void FTapQRCodeService::StartPolling(const FString& ClientID,
 
 void FTapQRCodeService::StopPolling()
 {
+	// Invalidate queued responses even when polling has already stopped.
+	++SessionGeneration;
 	if (bPolling)
 	{
 		bPolling = false;
@@ -237,98 +194,166 @@ void FTapQRCodeService::PollOnce()
 		Endpoint,
 		Headers,
 		FormBody,
-		FTapHttpRequestCompleteDelegate::CreateLambda([WeakSelf = TWeakPtr<FTapQRCodeService>(AsShared())](const FTapHttpResponse& Result)
+		MakePollCallback(),
+		15.0f
+	);
+}
+
+FTapHttpRequestCompleteDelegate FTapQRCodeService::MakePollCallback()
+{
+	const uint64 RequestGeneration = SessionGeneration;
+	return FTapHttpRequestCompleteDelegate::CreateLambda([WeakSelf = TWeakPtr<FTapQRCodeService>(AsShared()), RequestGeneration](const FTapHttpResponse& Result)
+	{
+		// HTTP 回调可能在非游戏线程, 捕获需要的数据后切回游戏线程
+		int32 StatusCode = Result.StatusCode;
+		FString Content = Result.Content;
+		FString ErrorMessage = Result.ErrorMessage;
+		TSharedPtr<FJsonObject> JsonObject = Result.JsonObject;
+
+		AsyncTask(ENamedThreads::GameThread, [WeakSelf, RequestGeneration, StatusCode, Content, ErrorMessage, JsonObject]()
 		{
-			// HTTP 回调可能在非游戏线程, 捕获需要的数据后切回游戏线程
-			int32 StatusCode = Result.StatusCode;
-			FString Content = Result.Content;
-			FString ErrorMessage = Result.ErrorMessage;
-			TSharedPtr<FJsonObject> JsonObject = Result.JsonObject;
+			// WeakPtr 保护：若 QRService 已被销毁则安全退出，避免 use-after-free
+			TSharedPtr<FTapQRCodeService> Self = WeakSelf.Pin();
+			if (!Self.IsValid() || !Self->bPolling || RequestGeneration != Self->SessionGeneration) return;
 
-			AsyncTask(ENamedThreads::GameThread, [WeakSelf, StatusCode, Content, ErrorMessage, JsonObject]()
+			Self->bPollRequestInFlight = false;
+			Self->LastPollTime = FPlatformTime::Seconds();
+			// Status handlers may close the panel or start another session.
+			const FOnQRCodeStatusChanged StatusCallback = Self->PollStatusCallback;
+
+			if (JsonObject.IsValid())
 			{
-				// WeakPtr 保护：若 QRService 已被销毁则安全退出，避免 use-after-free
-				TSharedPtr<FTapQRCodeService> Self = WeakSelf.Pin();
-				if (!Self.IsValid() || !Self->bPolling) return;
-
-				Self->bPollRequestInFlight = false;
-				Self->LastPollTime = FPlatformTime::Seconds();
-
-				if (JsonObject.IsValid())
+				// 服务端响应可能有 data 包装层: {"data":{...}, "success":true}
+				const TSharedPtr<FJsonObject>* DataObj = nullptr;
+				TSharedPtr<FJsonObject> Source = JsonObject;
+				if (JsonObject->TryGetObjectField(TEXT("data"), DataObj) && DataObj && (*DataObj).IsValid())
 				{
-					// 服务端响应可能有 data 包装层: {"data":{...}, "success":true}
-					const TSharedPtr<FJsonObject>* DataObj = nullptr;
-					TSharedPtr<FJsonObject> Source = JsonObject;
-					if (JsonObject->TryGetObjectField(TEXT("data"), DataObj) && DataObj && (*DataObj).IsValid())
-					{
-						Source = *DataObj;
-					}
+					Source = *DataObj;
+				}
 
-					double IntervalNumber = 0;
-					if (Source->TryGetNumberField(TEXT("interval"), IntervalNumber))
+				double IntervalNumber = 0;
+				if (Source->TryGetNumberField(TEXT("interval"), IntervalNumber))
+				{
+					const int32 NewInterval = static_cast<int32>(IntervalNumber);
+					if (NewInterval > 0)
 					{
-						const int32 NewInterval = static_cast<int32>(IntervalNumber);
-						if (NewInterval > 0)
-						{
-							Self->QRCodeData.Interval = NewInterval;
-						}
+						Self->QRCodeData.Interval = NewInterval;
 					}
+				}
 
-					// 检查是否有 error 字段 (轮询状态)
-					FString Error;
-					if (Source->TryGetStringField(TEXT("error"), Error))
+				// 检查是否有 error 字段 (轮询状态)
+				FString Error;
+				if (Source->TryGetStringField(TEXT("error"), Error))
+				{
+					if (Error == TEXT("authorization_pending"))
 					{
-						if (Error == TEXT("authorization_pending"))
-						{
-							Self->PollStatusCallback.ExecuteIfBound(ETapQRCodeStatus::Pending);
-						}
-						else if (Error == TEXT("authorization_waiting"))
-						{
-							Self->PollStatusCallback.ExecuteIfBound(ETapQRCodeStatus::Scanned);
-						}
-						else if (Error == TEXT("access_denied"))
-						{
-							Self->StopPolling();
-							Self->PollStatusCallback.ExecuteIfBound(ETapQRCodeStatus::Denied);
-						}
-						else
-						{
-							UE_LOG(LogTapLogin, Warning, TEXT("[QRService] Unknown poll error: %s"), *Error);
-						}
+						StatusCallback.ExecuteIfBound(ETapQRCodeStatus::Pending);
 					}
-					else if (Source->HasField(TEXT("kid")) || Source->HasField(TEXT("access_token")))
+					else if (Error == TEXT("authorization_waiting"))
 					{
-						// 成功, 解析 token
-						FTapTokenData TokenData;
-						TokenData.Kid = Source->GetStringField(TEXT("kid"));
-						TokenData.AccessToken = Source->GetStringField(TEXT("access_token"));
-						TokenData.TokenType = Source->GetStringField(TEXT("token_type"));
-						TokenData.MacKey = Source->GetStringField(TEXT("mac_key"));
-						TokenData.MacAlgorithm = Source->GetStringField(TEXT("mac_algorithm"));
-						FString ScopeStr;
-						if (Source->TryGetStringField(TEXT("scope"), ScopeStr) && !ScopeStr.IsEmpty())
-						{
-							ScopeStr.ParseIntoArray(TokenData.Scopes, TEXT(" "), /*CullEmpty*/ true);
-						}
-
-						UE_LOG(LogTapLogin, Log, TEXT("[QRService] Auth success - kid: %s"), TEXT("[REDACTED]"));
+						StatusCallback.ExecuteIfBound(ETapQRCodeStatus::Scanned);
+					}
+					else if (Error == TEXT("access_denied"))
+					{
 						Self->StopPolling();
-						Self->PollStatusCallback.ExecuteIfBound(ETapQRCodeStatus::Success);
-						Self->PollAuthCallback.ExecuteIfBound(TokenData);
+						StatusCallback.ExecuteIfBound(ETapQRCodeStatus::Denied);
 					}
 					else
 					{
-						UE_LOG(LogTapLogin, Warning, TEXT("[QRService] Poll response unknown format: %s"), *TapLogPrivacy::Body(Content));
+						UE_LOG(LogTapLogin, Warning, TEXT("[QRService] Unknown poll error: %s"), *Error);
+					}
+				}
+				else if (Source->HasField(TEXT("kid")) || Source->HasField(TEXT("access_token")))
+				{
+					// 成功, 解析 token
+					FTapTokenData TokenData;
+					TokenData.Kid = Source->GetStringField(TEXT("kid"));
+					TokenData.AccessToken = Source->GetStringField(TEXT("access_token"));
+					TokenData.TokenType = Source->GetStringField(TEXT("token_type"));
+					TokenData.MacKey = Source->GetStringField(TEXT("mac_key"));
+					TokenData.MacAlgorithm = Source->GetStringField(TEXT("mac_algorithm"));
+					FString ScopeStr;
+					if (Source->TryGetStringField(TEXT("scope"), ScopeStr) && !ScopeStr.IsEmpty())
+					{
+						ScopeStr.ParseIntoArray(TokenData.Scopes, TEXT(" "), /*CullEmpty*/ true);
+					}
+
+					UE_LOG(LogTapLogin, Log, TEXT("[QRService] Auth success - kid: %s"), TEXT("[REDACTED]"));
+					const FOnQRCodeAuthSuccess AuthCallback = Self->PollAuthCallback;
+					Self->StopPolling();
+					const uint64 CompletedGeneration = Self->SessionGeneration;
+					StatusCallback.ExecuteIfBound(ETapQRCodeStatus::Success);
+					if (CompletedGeneration == Self->SessionGeneration)
+					{
+						AuthCallback.ExecuteIfBound(TokenData);
 					}
 				}
 				else
 				{
-					UE_LOG(LogTapLogin, Warning, TEXT("[QRService] Poll request failed: %s (HTTP %d)"), *ErrorMessage, StatusCode);
+					UE_LOG(LogTapLogin, Warning, TEXT("[QRService] Poll response unknown format: %s"), *TapLogPrivacy::Body(Content));
 				}
-			});
-		}),
-		15.0f
-	);
+			}
+			else
+			{
+				UE_LOG(LogTapLogin, Warning, TEXT("[QRService] Poll request failed: %s (HTTP %d)"), *ErrorMessage, StatusCode);
+			}
+		});
+	});
+}
+
+FTapHttpRequestCompleteDelegate FTapQRCodeService::MakeQRCodeCallback(FOnQRCodeReady OnReady)
+{
+	const uint64 RequestGeneration = SessionGeneration;
+	return FTapHttpRequestCompleteDelegate::CreateLambda([WeakSelf = TWeakPtr<FTapQRCodeService>(AsShared()), OnReady, RequestGeneration](const FTapHttpResponse& Result)
+	{
+		// HTTP 回调可能在非游戏线程, 需要切回游戏线程操作成员变量和 delegate
+		int32 StatusCode = Result.StatusCode;
+		FString ErrorMessage = Result.ErrorMessage;
+		bool bSuccess = Result.IsSuccess();
+		TSharedPtr<FJsonObject> JsonObject = Result.JsonObject;
+
+		AsyncTask(ENamedThreads::GameThread, [WeakSelf, OnReady, RequestGeneration, StatusCode, ErrorMessage, bSuccess, JsonObject]()
+		{
+			TSharedPtr<FTapQRCodeService> Self = WeakSelf.Pin();
+			if (!Self.IsValid() || RequestGeneration != Self->SessionGeneration) return;
+
+			UE_LOG(LogTemp, Verbose, TEXT("[QRService] Response - HTTP %d"), StatusCode);
+
+			if (bSuccess && JsonObject.IsValid())
+			{
+				// 服务端响应有 data 包装层: {"data":{...}, "success":true}
+				const TSharedPtr<FJsonObject>* DataObj = nullptr;
+				TSharedPtr<FJsonObject> Source = JsonObject;
+				if (JsonObject->TryGetObjectField(TEXT("data"), DataObj) && DataObj && (*DataObj).IsValid())
+				{
+					Source = *DataObj;
+				}
+
+				Self->QRCodeData.DeviceCode = Source->GetStringField(TEXT("device_code"));
+				Self->QRCodeData.QRCodeUrl = Source->GetStringField(TEXT("qrcode_url"));
+				Self->QRCodeData.ExpiresIn = Source->GetIntegerField(TEXT("expires_in"));
+				Self->QRCodeData.Interval = Source->GetIntegerField(TEXT("interval"));
+
+				if (Self->QRCodeData.Interval <= 0)
+				{
+					Self->QRCodeData.Interval = 5;
+				}
+
+				Self->QRCodeExpireTime = FPlatformTime::Seconds() + Self->QRCodeData.ExpiresIn;
+
+				UE_LOG(LogTapLogin, Log, TEXT("[QRService] QR code ready - expires: %ds, interval: %ds"),
+					Self->QRCodeData.ExpiresIn, Self->QRCodeData.Interval);
+
+				OnReady.ExecuteIfBound(true, Self->QRCodeData);
+			}
+			else
+			{
+				UE_LOG(LogTapLogin, Error, TEXT("[QRService] QR code request failed: %s (HTTP %d)"),
+					*ErrorMessage, StatusCode);
+				OnReady.ExecuteIfBound(false, Self->QRCodeData);
+			}
+		});
+	});
 }
 
 #endif // PLATFORM_WINDOWS || PLATFORM_MAC || PLATFORM_LINUX

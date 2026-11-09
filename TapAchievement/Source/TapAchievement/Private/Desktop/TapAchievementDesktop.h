@@ -1,12 +1,14 @@
 // Copyright TapTap. All Rights Reserved.
 #pragma once
 #include "CoreMinimal.h"
+#include "Containers/Ticker.h"
 
 #if PLATFORM_WINDOWS || PLATFORM_MAC
 
 #include "TapAchievementTypes.h"
 #include "Desktop/TapAchievementPendingItem.h"
 #include "TapTapSdkOptions.h"
+#include "TapCore.h"
 #include "Internal/Platform/TapOpenlogTracker.h"
 #include "Internal/Http/TapHttpResult.h"
 
@@ -17,9 +19,9 @@ class FTapAchievementPendingQueue
 {
 public:
     bool Enqueue(const FTapAchievementPendingItem& Item);
-    void AddLoaded(const FTapAchievementPendingItem& Item);
     TArray<FTapAchievementPendingItem> BeginReplay(const FString& UserId);
     void FinishReplay(const FString& UUID, bool bRemoveItem);
+    void ReplaceForUser(const FString& UserId, const TArray<FTapAchievementPendingItem>& LoadedItems);
 
     int32 Num() const { return Items.Num(); }
     const TArray<FTapAchievementPendingItem>& GetItems() const { return Items; }
@@ -29,10 +31,11 @@ private:
     TSet<FString> UploadingUUIDs;
 };
 
-class FTapAchievementDesktop
+class FTapAchievementDesktop : private ITapInitCallback
 {
 public:
     static FTapAchievementDesktop& Get();
+    ~FTapAchievementDesktop() override;
 
     void Initialize(const FTapTapSdkOptions& Config);
 
@@ -42,6 +45,8 @@ public:
     void SetToastEnable(bool bEnable);
 
 private:
+    void OnInitSuccess() override;
+    void OnInitFail(int32 ErrorCode, const FString& ErrorMessage) override;
     bool CheckPreconditions(const FString& AchievementId, FString& OutUserId);
     bool CanSendForUser(const FString& UserId) const;
 
@@ -54,19 +59,31 @@ private:
 
     FTapAchievementPendingQueue PendingQueue;
     void EnqueuePending(const FTapAchievementPendingItem& Item);
-    void FinishPendingReplay(const FString& UUID, bool bRemoveItem);
+    void FinishPendingReplay(const FString& UUID, const FString& UserId, bool bRemoveItem);
     void FlushPendingQueue();
-    void SaveQueueToDisk() const;
-    void LoadQueueFromDisk();
-    FString GetQueueFilePath() const;
+    void SaveQueueToDisk();
+    /** Hold one file lease across read, delta application and publication, then refresh this account. */
+    bool LoadQueueFromDisk(const FString& UserId);
+    FString GetQueueFilePath(const FString& UserId) const;
+    FString GetLegacyQueueFilePath() const;
+
+    FString ClientId;
+    // Only uncommitted changes may be merged into the latest disk state, never an old snapshot.
+    TMap<FString, FTapAchievementPendingItem> PendingAdds;
+    TMap<FString, FString> PendingRemovals; // UUID -> request-time account
 
     bool bToastEnabled = true;
     bool bInitialized = false;
+    bool bQueueNeedsSave = false;
+    bool bQueueReady = false;
+    FTSTicker::FDelegateHandle CacheRetryTicker;
 
 #if WITH_DEV_AUTOMATION_TESTS
     friend class FTapAchievementPendingAccountTest;
     friend class FTapAchievementIncrementUnlockTest;
-    FString QueueFilePathForTest;
+    friend class FTapAchievementSharedCacheTest;
+    friend class FTapAchievementAccountPersistenceTest;
+    FString QueueRootForTest;
 #endif
 
     FTapOpenlogTracker Tracker{TEXT("TapAchievement"), TEXT("")};

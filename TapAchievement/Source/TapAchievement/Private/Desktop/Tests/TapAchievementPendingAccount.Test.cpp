@@ -10,6 +10,7 @@
 #include "Misc/Guid.h"
 #include "Misc/Paths.h"
 #include "Misc/ScopeExit.h"
+#include "Internal/Storage/TapSharedCacheFile.h"
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FTapAchievementPendingAccountTest,
     "TapSDK.Achievement.PendingQueue.CapturedAccountOwnership",
@@ -18,9 +19,9 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FTapAchievementPendingAccountTest,
 bool FTapAchievementPendingAccountTest::RunTest(const FString&)
 {
     FTapAchievementDesktop Desktop;
-    Desktop.QueueFilePathForTest = FPaths::Combine(FPaths::ProjectSavedDir(), TEXT("Automation"),
-        TEXT("achievement-queue-") + FGuid::NewGuid().ToString(EGuidFormats::Digits) + TEXT(".json"));
-    ON_SCOPE_EXIT { IFileManager::Get().Delete(*Desktop.QueueFilePathForTest); };
+    Desktop.QueueRootForTest = FPaths::Combine(FPaths::ProjectSavedDir(), TEXT("Automation"),
+        TEXT("achievement-queue-") + FGuid::NewGuid().ToString(EGuidFormats::Digits));
+    ON_SCOPE_EXIT { IFileManager::Get().DeleteDirectory(*Desktop.QueueRootForTest, false, true); };
 
     Desktop.Initialize(FTapTapSdkOptions());
     TestEqual(TEXT("Achievement tracker uses the packaged module version"),
@@ -59,8 +60,9 @@ bool FTapAchievementPendingAccountTest::RunTest(const FString&)
 
     // Exercise the real persistence format, using an isolated file.
     FTapAchievementDesktop Reloaded;
-    Reloaded.QueueFilePathForTest = Desktop.QueueFilePathForTest;
-    Reloaded.LoadQueueFromDisk();
+    Reloaded.QueueRootForTest = Desktop.QueueRootForTest;
+    TestTrue(TEXT("Load A's account file"), Reloaded.LoadQueueFromDisk(TEXT("account_a")));
+    TestTrue(TEXT("Load B's account file"), Reloaded.LoadQueueFromDisk(TEXT("account_b")));
     const auto ReplayA = Reloaded.PendingQueue.BeginReplay(TEXT("account_a"));
     TestEqual(TEXT("A recovers all four operations after reload"), ReplayA.Num(), 4);
     int32 TotalSteps = 0;
@@ -93,6 +95,36 @@ bool FTapAchievementPendingAccountTest::RunTest(const FString&)
     Reloaded.PendingQueue.FinishReplay(TEXT("unlock_b"), false);
     TestEqual(TEXT("A's completion does not remove B's unlock"), Reloaded.PendingQueue.BeginReplay(TEXT("account_b")).Num(), 1);
 
+    return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FTapAchievementSharedCacheTest,
+    "TapSDK.Achievement.PendingQueue.SharedCacheBusy",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+bool FTapAchievementSharedCacheTest::RunTest(const FString&)
+{
+    const FString Directory = FPaths::Combine(FPaths::ProjectSavedDir(), TEXT("Automation"),
+        TEXT("achievement-cache-") + FGuid::NewGuid().ToString(EGuidFormats::Digits));
+    ON_SCOPE_EXIT { IFileManager::Get().DeleteDirectory(*Directory, false, true); };
+    FTapAchievementDesktop Desktop;
+    Desktop.QueueRootForTest = Directory;
+    FTapAchievementPendingItem Item;
+    Item.UUID = TEXT("confirmed");
+    Item.UserId = TEXT("a");
+    Item.AchievementId = TEXT("achievement");
+    Desktop.EnqueuePending(Item);
+    auto Lease = FTapSharedCacheFile::TryAcquire(Desktop.GetQueueFilePath(Item.UserId));
+    TestTrue(TEXT("Hold cache lock"), !!Lease);
+    Desktop.FinishPendingReplay(Item.UUID, Item.UserId, true);
+    TestEqual(TEXT("Busy cleanup does not requeue a confirmed item"), Desktop.PendingQueue.Num(), 0);
+    TestTrue(TEXT("Busy cleanup remains pending"), Desktop.bQueueNeedsSave);
+    Lease.Reset();
+    Desktop.FlushPendingQueue();
+    TestFalse(TEXT("Empty queue retries cleanup after release"), Desktop.bQueueNeedsSave);
+    FTapAchievementDesktop Reloaded;
+    Reloaded.QueueRootForTest = Desktop.QueueRootForTest;
+    Reloaded.LoadQueueFromDisk(Item.UserId);
+    TestEqual(TEXT("No replay after successful cleanup"), Reloaded.PendingQueue.Num(), 0);
     return true;
 }
 

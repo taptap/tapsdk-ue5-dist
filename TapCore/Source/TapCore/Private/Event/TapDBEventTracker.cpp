@@ -11,6 +11,7 @@
 #include "Serialization/JsonReader.h"
 #include "Serialization/JsonSerializer.h"
 #include "TapJsonCompat.h"
+#include "Storage/TapEventStorage.h"
 
 FTapDBEventTracker::FTapDBEventTracker()
 	: Prefs(nullptr)
@@ -37,10 +38,42 @@ void FTapDBEventTracker::Init(const FString& InClientID, const FString& InClient
 	bool bInOverrideBuiltInParameters,
 	const FString& InitProperties)
 {
+	if (bIsInitialized) return;
+	const uint64 Generation = ++InitializationGeneration;
+	PendingCalls.Empty();
+	FTSTicker::GetCoreTicker().RemoveTicker(InitTicker);
+	Prefs.Reset();
+	PendingInitialization = [=, this]()
+	{
+		return TryInit(InClientID, InClientToken, Region, bInEnableLog, GameVersion, Channel,
+			bDisableAutoLogDeviceLogin, bInOverrideBuiltInParameters, InitProperties);
+	};
+	const auto Attempt = PendingInitialization;
+	const bool bReady = Attempt();
+	if (Generation != InitializationGeneration) return;
+	if (bReady) { DrainPendingCalls(); return; }
+	InitTicker = FTSTicker::GetCoreTicker().AddTicker(FTickerDelegate::CreateLambda([this](float)
+	{
+		const uint64 AttemptGeneration = InitializationGeneration;
+		const auto RetryInitialization = PendingInitialization;
+		const bool bReadyNow = !RetryInitialization || RetryInitialization();
+		if (AttemptGeneration != InitializationGeneration) return false;
+		if (bReadyNow)
+		{
+			InitTicker.Reset(); DrainPendingCalls(); return false;
+		}
+		return true;
+	}), 1.0f);
+}
+
+bool FTapDBEventTracker::TryInit(const FString& InClientID, const FString& InClientToken,
+	ETapRegion Region, bool bInEnableLog, const FString& GameVersion, const FString& Channel,
+	bool bDisableAutoLogDeviceLogin, bool bInOverrideBuiltInParameters, const FString& InitProperties)
+{
 	if (bIsInitialized)
 	{
 		UE_LOG(LogTapDB, Warning, TEXT("[TapDBEventTracker] Already initialized"));
-		return;
+		return true;
 	}
 
 	ClientID = InClientID;
@@ -49,14 +82,21 @@ void FTapDBEventTracker::Init(const FString& InClientID, const FString& InClient
 	bOverrideBuiltInParameters = bInOverrideBuiltInParameters;
 
 	// Init persistence (path relative to ProjectSavedDir)
-	Prefs = MakeUnique<FTapMachineBoundPrefs>();
-	Prefs->Init(FString::Printf(TEXT("TapDB/tapdb_storage_%s.json"), *ClientID));
+	auto& Storage = FTapEventStorage::Get();
+	if (!Storage.Prepare(ClientID, Region)) return false;
+	if (!Prefs)
+	{
+		Prefs = MakeUnique<FTapMachineBoundPrefs>();
+		Prefs->Init(Storage.GetPrefsPath().IsEmpty()
+			? FString::Printf(TEXT("TapDB/tapdb_storage_%s.json"), *ClientID) : Storage.GetPrefsPath(), Storage.IsIsolated());
+	}
+	if (!Prefs->EnsureReady()) return false;
 
 	// Init identity
 	Identity.Init(*Prefs);
 
 	// Init event sender
-	EventSender.Init(ClientID, Region);
+	EventSender.Init(ClientID, Region, Storage.GetEventsPath(), Storage.IsIsolated());
 
 	// Machine changed — discard old machine's unsent events
 	if (Prefs->WasInvalidated())
@@ -65,7 +105,16 @@ void FTapDBEventTracker::Init(const FString& InClientID, const FString& InClient
 	}
 
 	// Init user manager
-	UserManager.Init(*Prefs);
+	UserManager.Init(*Prefs, Storage.IsIsolated());
+	UserManager.BuildDurationSnapshot = [this](const FString& User, int64 Duration)
+	{
+		auto Props = MakeShared<FJsonObject>();
+		Props->SetNumberField(TapDBConstants::PROP_DURATION, static_cast<double>(Duration));
+		auto Snapshot = BuildTrackEvent(TapDBConstants::EVENT_PLAY_GAME, Props, true);
+		Snapshot->SetStringField(TEXT("user_id"), User);
+		return Snapshot;
+	};
+	UserManager.SendDurationSnapshot = [this](TSharedPtr<FJsonObject> Snapshot) { EventSender.Send(Snapshot); };
 	UserManager.OnPlayGameEvent.BindRaw(this, &FTapDBEventTracker::OnPlayGameEvent);
 
 	// Collect basic device properties
@@ -110,12 +159,23 @@ void FTapDBEventTracker::Init(const FString& InClientID, const FString& InClient
 	{
 		UE_LOG(LogTapDB, Log, TEXT("[TapDBEventTracker] Auto device_login disabled by config"));
 	}
+	Storage.Recover([Region](const FTapEventStorage::FEvents& Events, TFunction<void(bool)> Complete)
+	{
+		FTapDBEventSender::SendHistory(Events, Region, MoveTemp(Complete));
+	});
+	return true;
 }
 
 void FTapDBEventTracker::Shutdown()
 {
+	++InitializationGeneration;
+	PendingCalls.Empty();
+	FTSTicker::GetCoreTicker().RemoveTicker(InitTicker);
+	InitTicker.Reset();
+	PendingInitialization = nullptr;
 	if (!bIsInitialized)
 	{
+		Prefs.Reset();
 		return;
 	}
 
@@ -134,6 +194,30 @@ void FTapDBEventTracker::Shutdown()
 	UE_LOG(LogTapDB, Log, TEXT("[TapDBEventTracker] Shutdown"));
 }
 
+
+bool FTapDBEventTracker::DeferUntilReady(TFunction<void()> Call)
+{
+	if (bIsInitialized) return false;
+	if (PendingInitialization)
+	{
+		if (PendingCalls.Num() < 256) PendingCalls.Add(MoveTemp(Call));
+		else UE_LOG(LogTapDB, Warning, TEXT("Statistics startup queue full; call dropped"));
+	}
+	return true;
+}
+
+void FTapDBEventTracker::DrainPendingCalls()
+{
+	PendingInitialization = nullptr;
+	auto Calls = MoveTemp(PendingCalls);
+	const uint64 Generation = InitializationGeneration;
+	for (auto& Call : Calls)
+	{
+		if (!bIsInitialized || Generation != InitializationGeneration) break;
+		Call();
+	}
+}
+
 // === User ===
 
 void FTapDBEventTracker::SetUserID(const FString& UserID)
@@ -143,7 +227,7 @@ void FTapDBEventTracker::SetUserID(const FString& UserID)
 
 void FTapDBEventTracker::SetUserID(const FString& UserID, const FString& PropertiesJson)
 {
-	if (!bIsInitialized) return;
+	if (DeferUntilReady([=, this] { SetUserID(UserID, PropertiesJson); })) return;
 
 	if (!IsValidUserID(UserID))
 	{
@@ -180,7 +264,7 @@ void FTapDBEventTracker::SetUserID(const FString& UserID, const FString& Propert
 
 void FTapDBEventTracker::ClearUser()
 {
-	if (!bIsInitialized) return;
+	if (DeferUntilReady([=, this] { ClearUser(); })) return;
 
 	UserManager.Logout();
 
@@ -199,7 +283,7 @@ FString FTapDBEventTracker::GetDeviceId()
 
 void FTapDBEventTracker::LogEvent(const FString& Name, const FString& PropertiesJson)
 {
-	if (!bIsInitialized) return;
+	if (DeferUntilReady([=, this] { LogEvent(Name, PropertiesJson); })) return;
 
 	if (!IsValidEventName(Name))
 	{
@@ -222,7 +306,7 @@ void FTapDBEventTracker::LogEvent(const FString& Name, const FString& Properties
 
 void FTapDBEventTracker::LogPurchasedEvent(const FString& OrderJson)
 {
-	if (!bIsInitialized) return;
+	if (DeferUntilReady([=, this] { LogPurchasedEvent(OrderJson); })) return;
 
 	TSharedPtr<FJsonObject> OrderObj = ParseJsonString(OrderJson);
 	if (!OrderObj.IsValid())
@@ -281,7 +365,7 @@ void FTapDBEventTracker::LogPurchasedEvent(const FString& OrderJson)
 
 void FTapDBEventTracker::LogDeviceLoginEvent()
 {
-	if (!bIsInitialized) return;
+	if (DeferUntilReady([=, this] { LogDeviceLoginEvent(); })) return;
 
 	TSharedPtr<FJsonObject> Event = BuildTrackEvent(
 		TapDBConstants::EVENT_DEVICE_LOGIN, nullptr, true);
@@ -300,7 +384,7 @@ void FTapDBEventTracker::LogDeviceLoginEvent()
 
 void FTapDBEventTracker::DeviceInitialize(const FString& PropertiesJson)
 {
-	if (!bIsInitialized) return;
+	if (DeferUntilReady([=, this] { DeviceInitialize(PropertiesJson); })) return;
 
 	TSharedPtr<FJsonObject> Props = ParseJsonString(PropertiesJson);
 	TSharedPtr<FJsonObject> Event = BuildPropertyEvent(TapDBConstants::TYPE_INITIALISE, Props, true);
@@ -312,7 +396,7 @@ void FTapDBEventTracker::DeviceInitialize(const FString& PropertiesJson)
 
 void FTapDBEventTracker::DeviceUpdate(const FString& PropertiesJson)
 {
-	if (!bIsInitialized) return;
+	if (DeferUntilReady([=, this] { DeviceUpdate(PropertiesJson); })) return;
 
 	TSharedPtr<FJsonObject> Props = ParseJsonString(PropertiesJson);
 	TSharedPtr<FJsonObject> Event = BuildPropertyEvent(TapDBConstants::TYPE_UPDATE, Props, true);
@@ -324,7 +408,7 @@ void FTapDBEventTracker::DeviceUpdate(const FString& PropertiesJson)
 
 void FTapDBEventTracker::DeviceAdd(const FString& PropertiesJson)
 {
-	if (!bIsInitialized) return;
+	if (DeferUntilReady([=, this] { DeviceAdd(PropertiesJson); })) return;
 
 	TSharedPtr<FJsonObject> Props = ParseJsonString(PropertiesJson);
 	TSharedPtr<FJsonObject> Event = BuildPropertyEvent(TapDBConstants::TYPE_ADD, Props, true);
@@ -338,7 +422,7 @@ void FTapDBEventTracker::DeviceAdd(const FString& PropertiesJson)
 
 void FTapDBEventTracker::UserInitialize(const FString& PropertiesJson)
 {
-	if (!bIsInitialized) return;
+	if (DeferUntilReady([=, this] { UserInitialize(PropertiesJson); })) return;
 
 	TSharedPtr<FJsonObject> Props = ParseJsonString(PropertiesJson);
 	TSharedPtr<FJsonObject> Event = BuildPropertyEvent(TapDBConstants::TYPE_INITIALISE, Props, false);
@@ -350,7 +434,7 @@ void FTapDBEventTracker::UserInitialize(const FString& PropertiesJson)
 
 void FTapDBEventTracker::UserUpdate(const FString& PropertiesJson)
 {
-	if (!bIsInitialized) return;
+	if (DeferUntilReady([=, this] { UserUpdate(PropertiesJson); })) return;
 
 	TSharedPtr<FJsonObject> Props = ParseJsonString(PropertiesJson);
 	TSharedPtr<FJsonObject> Event = BuildPropertyEvent(TapDBConstants::TYPE_UPDATE, Props, false);
@@ -362,7 +446,7 @@ void FTapDBEventTracker::UserUpdate(const FString& PropertiesJson)
 
 void FTapDBEventTracker::UserAdd(const FString& PropertiesJson)
 {
-	if (!bIsInitialized) return;
+	if (DeferUntilReady([=, this] { UserAdd(PropertiesJson); })) return;
 
 	TSharedPtr<FJsonObject> Props = ParseJsonString(PropertiesJson);
 	TSharedPtr<FJsonObject> Event = BuildPropertyEvent(TapDBConstants::TYPE_ADD, Props, false);
@@ -376,7 +460,7 @@ void FTapDBEventTracker::UserAdd(const FString& PropertiesJson)
 
 void FTapDBEventTracker::AddCommonProperty(const FString& Key, const FString& Value)
 {
-	if (!bIsInitialized) return;
+	if (DeferUntilReady([=, this] { AddCommonProperty(Key, Value); })) return;
 	if (Key.IsEmpty()) return;
 	CommonProperties.Add(Key, MakeShared<FJsonValueString>(Value));
 
@@ -388,7 +472,7 @@ void FTapDBEventTracker::AddCommonProperty(const FString& Key, const FString& Va
 
 void FTapDBEventTracker::AddCommon(const FString& PropertiesJson)
 {
-	if (!bIsInitialized) return;
+	if (DeferUntilReady([=, this] { AddCommon(PropertiesJson); })) return;
 
 	TSharedPtr<FJsonObject> Props = ParseJsonString(PropertiesJson);
 	if (Props.IsValid())
@@ -413,7 +497,7 @@ void FTapDBEventTracker::AddCommon(const FString& PropertiesJson)
 
 void FTapDBEventTracker::ClearCommonProperty(const FString& Key)
 {
-	if (!bIsInitialized) return;
+	if (DeferUntilReady([=, this] { ClearCommonProperty(Key); })) return;
 	int32 Removed = CommonProperties.Remove(Key);
 
 	if (bEnableLog)
@@ -425,7 +509,7 @@ void FTapDBEventTracker::ClearCommonProperty(const FString& Key)
 
 void FTapDBEventTracker::ClearCommonProperties(const TArray<FString>& Keys)
 {
-	if (!bIsInitialized) return;
+	if (DeferUntilReady([=, this] { ClearCommonProperties(Keys); })) return;
 
 	if (bEnableLog)
 	{
@@ -455,7 +539,7 @@ void FTapDBEventTracker::ClearCommonProperties(const TArray<FString>& Keys)
 
 void FTapDBEventTracker::ClearAllCommonProperties()
 {
-	if (!bIsInitialized) return;
+	if (DeferUntilReady([=, this] { ClearAllCommonProperties(); })) return;
 	CommonProperties.Empty();
 
 	if (bEnableLog)
@@ -567,9 +651,10 @@ TSharedPtr<FJsonObject> FTapDBEventTracker::BuildTrackEvent(const FString& Name,
 	}
 
 	// 3. Dynamic properties
-	if (DynamicPropsCallback)
+	const auto DynamicCallback = DynamicPropsCallback;
+	if (DynamicCallback)
 	{
-		FString DynamicJson = DynamicPropsCallback();
+		FString DynamicJson = DynamicCallback();
 		TSharedPtr<FJsonObject> DynamicProps = ParseJsonString(DynamicJson);
 		if (DynamicProps.IsValid())
 		{

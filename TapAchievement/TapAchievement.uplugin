@@ -1,7 +1,7 @@
 {
 	"FileVersion": 3,
 	"Version": 1,
-	"VersionName": "4.11.0",
+	"VersionName": "4.11.1",
 	"FriendlyName": "TapAchievement",
 	"Description": "TapSDK Achievement module (Desktop Win64/Mac + Mobile iOS/Android)",
 	"Category": "TapSDK",

@@ -23,7 +23,7 @@ public:
 	FTapDBUserManager();
 	~FTapDBUserManager();
 
-	void Init(FTapMachineBoundPrefs& InPrefs);
+	void Init(FTapMachineBoundPrefs& InPrefs, bool bPrivateSession = false);
 	void Login(const FString& UserID, TSharedPtr<FJsonObject> Properties = nullptr);
 	void Logout();
 	void Shutdown();
@@ -33,8 +33,13 @@ public:
 
 	/** Called when play_game event should be sent. Tracker registers this callback. */
 	FOnPlayGameEvent OnPlayGameEvent;
+	TFunction<TSharedPtr<FJsonObject>(const FString&, int64)> BuildDurationSnapshot;
+	TFunction<void(TSharedPtr<FJsonObject>)> SendDurationSnapshot;
 
 private:
+#if WITH_DEV_AUTOMATION_TESTS
+	friend class FTapIsolatedDurationTest;
+#endif
 	/** Returns a per-user storage key for played duration, e.g. "tapdb_played_duration_UserID123" */
 	FString PlayedDurationKey() const
 	{
@@ -45,6 +50,8 @@ private:
 	void StopPlayRecording();
 	bool OnPlayTimerTick(float DeltaTime);
 
+	bool bIsolated = false;
+	uint64 SessionGeneration = 0;
 	FString CurrentUserID;
 	int64 PlayedDuration;
 	FTapMachineBoundPrefs* Prefs;

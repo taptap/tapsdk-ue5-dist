@@ -45,8 +45,6 @@ public class TapLogin : ModuleRules
 				"HTTP",
 				"ApplicationCore",
 				"PlatformCryptoContext",
-				"Sockets",
-				"Networking",
 				"TapCore",
 			}
 		);

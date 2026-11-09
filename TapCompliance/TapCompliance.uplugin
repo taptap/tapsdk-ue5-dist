@@ -1,7 +1,7 @@
 {
 	"FileVersion": 3,
 	"Version": 1,
-	"VersionName": "4.11.0",
+	"VersionName": "4.11.1",
 	"FriendlyName": "TapCompliance",
 	"Description": "TapCompliance - Anti-addiction and real-name authentication module",
 	"Category": "TapSDK",

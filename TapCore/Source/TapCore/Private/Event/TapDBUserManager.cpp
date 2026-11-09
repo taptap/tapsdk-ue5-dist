@@ -4,6 +4,10 @@
 #include "Internal/Storage/TapMachineBoundPrefs.h"
 #include "Internal/TapDBConstants.h"
 #include "TapCoreModule.h"
+#include "Storage/TapEventStorage.h"
+#include "Serialization/JsonSerializer.h"
+#include "Serialization/JsonReader.h"
+#include "Serialization/JsonWriter.h"
 
 FTapDBUserManager::FTapDBUserManager()
 	: PlayedDuration(0)
@@ -16,9 +20,10 @@ FTapDBUserManager::~FTapDBUserManager()
 	Shutdown();
 }
 
-void FTapDBUserManager::Init(FTapMachineBoundPrefs& InPrefs)
+void FTapDBUserManager::Init(FTapMachineBoundPrefs& InPrefs, bool bPrivateSession)
 {
 	Prefs = &InPrefs;
+	bIsolated = bPrivateSession;
 
 	// User identity is session-scoped. A persisted user id is only applied
 	// when SetUserID is called again this session, so idle init cannot emit
@@ -39,10 +44,12 @@ void FTapDBUserManager::Login(const FString& UserID, TSharedPtr<FJsonObject> Pro
 		Logout();
 	}
 
+	if (bIsolated && CurrentUserID == UserID) return;
+	++SessionGeneration;
 	CurrentUserID = UserID;
-	PlayedDuration = Prefs ? Prefs->GetInt64(PlayedDurationKey(), 0) : 0;
+	PlayedDuration = !bIsolated && Prefs ? Prefs->GetInt64(PlayedDurationKey(), 0) : 0;
 
-	if (Prefs)
+	if (Prefs && !bIsolated)
 	{
 		Prefs->Set(TapDBConstants::PREF_USER_ID, CurrentUserID);
 		Prefs->SetInt64(PlayedDurationKey(), PlayedDuration);
@@ -62,6 +69,20 @@ void FTapDBUserManager::Logout()
 	}
 
 	StopPlayRecording();
+	++SessionGeneration;
+	if (bIsolated)
+	{
+		TSharedPtr<FJsonObject> Snapshot;
+		const FString Json = Prefs ? Prefs->GetString(FTapEventStorage::SnapshotKey) : FString();
+		if (!Json.IsEmpty() && FJsonSerializer::Deserialize(TJsonReaderFactory<>::Create(Json), Snapshot) && Snapshot && SendDurationSnapshot)
+		{
+			SendDurationSnapshot(Snapshot);
+			Prefs->Remove(FTapEventStorage::SnapshotKey);
+			Prefs->Save();
+		}
+		CurrentUserID.Empty(); PlayedDuration = 0;
+		return;
+	}
 
 	FString LogoutUserID = CurrentUserID;
 	int64 Duration = PlayedDuration;
@@ -89,15 +110,22 @@ void FTapDBUserManager::Logout()
 void FTapDBUserManager::Shutdown()
 {
 	StopPlayRecording();
+	++SessionGeneration;
 
 	// Persist current state
-	if (Prefs && !CurrentUserID.IsEmpty())
+	if (Prefs && !CurrentUserID.IsEmpty() && !bIsolated)
 	{
 		Prefs->Set(TapDBConstants::PREF_USER_ID, CurrentUserID);
 		Prefs->SetInt64(PlayedDurationKey(), PlayedDuration);
 		Prefs->Save();
 	}
+	else if (Prefs && bIsolated)
+	{
+		Prefs->Save(); // Keep the last complete snapshot for exited-process recovery.
+	}
 	Prefs = nullptr;
+	CurrentUserID.Empty();
+	PlayedDuration = 0;
 }
 
 void FTapDBUserManager::StartPlayRecording()
@@ -132,6 +160,22 @@ bool FTapDBUserManager::OnPlayTimerTick(float DeltaTime)
 	}
 
 	PlayedDuration += static_cast<int64>(TapDBConstants::PLAY_RECORD_INTERVAL_SECONDS);
+
+	if (bIsolated)
+	{
+		const uint64 Generation = SessionGeneration;
+		const FString User = CurrentUserID;
+		auto Snapshot = BuildDurationSnapshot ? BuildDurationSnapshot(User, PlayedDuration) : nullptr;
+		// Dynamic property callbacks may re-enter logout/login or shutdown.
+		if (Generation != SessionGeneration || !Prefs || !Snapshot) return false;
+		FString Json;
+		if (FJsonSerializer::Serialize(Snapshot.ToSharedRef(), TJsonWriterFactory<>::Create(&Json)))
+		{
+			Prefs->Set(FTapEventStorage::SnapshotKey, Json);
+			Prefs->Save();
+		}
+		return true;
+	}
 
 	// Persist periodically
 	if (Prefs)

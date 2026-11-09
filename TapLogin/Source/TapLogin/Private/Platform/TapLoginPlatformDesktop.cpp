@@ -1,17 +1,14 @@
 // Copyright TapTap. All Rights Reserved.
 
 #include "TapLoginPlatformDesktop.h"
-#include "Internal/TapLogPrivacy.h"
 
 #if PLATFORM_WINDOWS || PLATFORM_MAC || PLATFORM_LINUX
 #include "TapLogin.h"
 #include "Internal/TapLoginInternal.h"
 #include "Internal/TapComplianceScopeProvider.h"
 #include "TapLoginCryptoUtils.h"
-#include "TapLoginDesktopWebAuth.h"
 #include "TapLoginPanelManager.h"
 #include "TapQRCodeService.h"
-#include "TapDeepLinkHandler.h"
 #include "TapLoginModule.h"
 #include "TapTapSdkOptions.h"
 #include "Internal/TapSdkConfigState.h"
@@ -21,17 +18,13 @@
 #include "Internal/Http/TapHttpRequest.h"
 #include "Internal/Http/TapHttpErrorConstants.h"
 #include "Internal/Http/TapHttpTime.h"
-#include "Misc/Base64.h"
-#include "Misc/SecureHash.h"
 #include "GenericPlatform/GenericPlatformMisc.h"
-#include "HAL/PlatformProcess.h"
+#include "GenericPlatform/GenericPlatformHttp.h"
 #include "Dom/JsonObject.h"
 #include "Serialization/JsonSerializer.h"
-#include "Sockets.h"
-#include "SocketSubsystem.h"
-#include "Interfaces/IPv4/IPv4Address.h"
-#include "Interfaces/IPv4/IPv4Endpoint.h"
 #include "Async/Async.h"
+#include "Misc/Paths.h"
+#include "Misc/SecureHash.h"
 #if PLATFORM_WINDOWS
 #include "Desktop/TapLoginClientBridge.h"
 #include "Internal/Storage/TapDeviceId.h"
@@ -73,25 +66,18 @@ namespace
 
 FTapLoginPlatformDesktop::FTapLoginPlatformDesktop()
 	: bInitialized(false)
-	, LocalServerPort(0)
-	, TcpListener(nullptr)
-	, bServerRunning(false)
 {
 	UE_LOG(LogTapLogin, Log, TEXT("[Desktop] FTapLoginPlatformDesktop created"));
 }
 
 FTapLoginPlatformDesktop::~FTapLoginPlatformDesktop()
 {
+	FTSTicker::GetCoreTicker().RemoveTicker(LoginCacheTicker);
 	// 析构时日志系统可能已被销毁（如点击窗口 X 退出时），不能调用 UE_LOG
 #if PLATFORM_WINDOWS
 	FTapLauncherInternal::OnLauncherCheckCompleted.RemoveAll(this);
 	FTapLoginClientBridge::Shutdown();
 #endif
-	if (bInitialized)
-	{
-		FTapDeepLinkHandler::Get().StopListening();
-		StopLocalServer();
-	}
 }
 
 // =============================================================================
@@ -126,20 +112,6 @@ FString FTapLoginPlatformDesktop::GetApiHost() const
 		: TEXT("https://open.tapapis.cn");
 }
 
-FString FTapLoginPlatformDesktop::GetAccountHost() const
-{
-	const FTapTapSdkOptions& Config = FTapSdkConfigState::GetCurrentConfig();
-	if (FTapSdkConfigState::IsRNDEnvironment())
-	{
-		return (Config.Region == ETapRegion::Global)
-			? TEXT("https://accounts-io.xdrnd.com")
-			: TEXT("https://accounts.xdrnd.cn");
-	}
-	return (Config.Region == ETapRegion::Global)
-		? TEXT("https://www.taptapauth.com")
-		: TEXT("https://accounts.taptap.cn");
-}
-
 // =============================================================================
 // ITapLoginPlatform Implementation
 // =============================================================================
@@ -163,23 +135,22 @@ void FTapLoginPlatformDesktop::Initialize()
 	bInitialized = true;
 
 	// 初始化持久化存储并恢复登录状态
-	LoginPrefs.Init(TEXT("TapLogin/account.json"));
-	LoadLoginState();
+	// Legacy account.json has no client ownership metadata and cannot be safely imported.
+	LoginPrefs.Init(LoginCachePath(ClientID));
 #if PLATFORM_WINDOWS
 	FTapLauncherInternal::OnLauncherCheckCompleted.AddRaw(this, &FTapLoginPlatformDesktop::HandleLauncherCheckCompleted);
-	FString LauncherOpenId;
-	if (FTapLauncherInternal::GetCachedOpenId(LauncherOpenId))
-	{
-		HandleLauncherCheckCompleted(LauncherOpenId);
-	}
 #endif
-	PendingOAuthPrefs.Init(TEXT("TapLogin/pending_oauth.json"));
-	LoadPendingOAuth();
-	RefreshCachedToken();
-
-	// 启动 DeepLink 监听 (open-taptap-{clientId}:// URL Scheme)
-	FTapDeepLinkHandler::Get().StartListening(ClientID,
-		FOnDeepLinkReceived::CreateRaw(this, &FTapLoginPlatformDesktop::HandleDeepLinkCallback));
+	if (LoginPrefs.EnsureReady()) RestoreCachedLogin();
+	else
+	{
+		const uint64 Generation = StateGeneration;
+		LoginCacheTicker = FTSTicker::GetCoreTicker().AddTicker(FTickerDelegate::CreateLambda([this, Generation](float)
+		{
+			if (!TryRestoreCachedLogin(Generation)) return true;
+			LoginCacheTicker.Reset();
+			return false;
+		}), 1.0f);
+	}
 
 	FTapLoginTracker::Get().TrackInit();
 
@@ -190,6 +161,40 @@ void FTapLoginPlatformDesktop::Initialize()
 bool FTapLoginPlatformDesktop::IsInitialized() const
 {
 	return bInitialized;
+}
+
+FString FTapLoginPlatformDesktop::LoginCachePath(const FString& InClientId)
+{
+	return FPaths::Combine(TEXT("TapLogin"), FMD5::HashAnsiString(*InClientId), TEXT("account.json"));
+}
+
+void FTapLoginPlatformDesktop::RestoreCachedLogin()
+{
+	LoadLoginState();
+#if PLATFORM_WINDOWS
+	FString LauncherOpenId;
+	if (FTapLauncherInternal::GetCachedOpenId(LauncherOpenId)) HandleLauncherCheckCompleted(LauncherOpenId);
+#endif
+	RefreshCachedToken();
+}
+
+bool FTapLoginPlatformDesktop::TryRestoreCachedLogin(uint64 Generation)
+{
+	// Never restore a delayed startup snapshot over a new login or logout.
+	{
+		FScopeLock Lock(&AccountLock);
+		if (Generation != StateGeneration || bLoginInProgress || CurrentAccount.IsSet()) return true;
+	}
+	if (!LoginPrefs.EnsureReady()) return false;
+	RestoreCachedLogin();
+	return true;
+}
+
+void FTapLoginPlatformDesktop::BeginLogin()
+{
+	FScopeLock Lock(&AccountLock);
+	++StateGeneration; // Retire startup restoration even if this login finishes before its next tick.
+	bLoginInProgress = true;
 }
 
 void FTapLoginPlatformDesktop::LoginWithScopes(const TArray<ETapLoginScope>& Scopes, TScriptInterface<ITapLoginCallback> Callback)
@@ -219,7 +224,7 @@ void FTapLoginPlatformDesktop::LoginWithScopes(const TArray<ETapLoginScope>& Sco
 		return;
 	}
 
-	bLoginInProgress = true;
+	BeginLogin();
 	PendingCallback = Callback;
 	PendingAccessTokenCallback = FTapAccessTokenCallback();
 	PendingScopes = BuildDesktopLoginScopes(Scopes);
@@ -250,7 +255,6 @@ void FTapLoginPlatformDesktop::LoginWithScopes(const TArray<ETapLoginScope>& Sco
 		ClientID,
 		ScopeStringArray,
 		FOnLoginPanelClose::CreateRaw(this, &FTapLoginPlatformDesktop::HandlePanelClose),
-		FOnLoginPanelWebLogin::CreateRaw(this, &FTapLoginPlatformDesktop::HandlePanelWebLogin),
 		FOnLoginPanelAuthSuccess::CreateRaw(this, &FTapLoginPlatformDesktop::HandlePanelAuthSuccess)
 	);
 
@@ -269,7 +273,6 @@ void FTapLoginPlatformDesktop::Logout()
 		bCacheUserSameWithTapClient = true;
 	}
 	FTapLoginPanelManager::Get().ClosePanel();
-	StopLocalServer();
 	{
 		FScopeLock Lock(&AccountLock);
 		CurrentAccount.Reset();
@@ -289,7 +292,7 @@ void FTapLoginPlatformDesktop::Logout()
 	PendingState.Empty();
 	CodeVerifier.Empty();
 	PendingScopes.Empty();
-	ClearPendingOAuth();
+	ClearNativeAuthorization();
 }
 
 TOptional<FTapAccount> FTapLoginPlatformDesktop::GetCurrentAccount() const
@@ -358,21 +361,6 @@ TArray<FString> FTapLoginPlatformDesktop::ScopesToStringArray(const TArray<ETapL
 	return Result;
 }
 
-TArray<ETapLoginScope> FTapLoginPlatformDesktop::ScopesFromStringArray(const TArray<FString>& ScopeStrings) const
-{
-	TArray<ETapLoginScope> Result;
-	for (const FString& Scope : ScopeStrings)
-	{
-		if (Scope == TEXT("basic_info")) Result.Add(ETapLoginScope::BasicInfo);
-		else if (Scope == TEXT("public_profile")) Result.Add(ETapLoginScope::PublicProfile);
-		else if (Scope == TEXT("email")) Result.Add(ETapLoginScope::Email);
-		else if (Scope == TEXT("user_friends")) Result.Add(ETapLoginScope::UserFriends);
-		else if (Scope == TEXT("compliance")) Result.Add(ETapLoginScope::Compliance);
-		else if (Scope == TEXT("compliance_basic")) Result.Add(ETapLoginScope::ComplianceBasic);
-	}
-	return Result;
-}
-
 FTapAccessToken FTapLoginPlatformDesktop::MakeAccessToken(
 	const FString& InKid,
 	const FString& InTokenType,
@@ -436,194 +424,6 @@ void FTapLoginPlatformDesktop::CompleteAccessTokenAuthorizationCancelled()
 	}
 }
 
-FString FTapLoginPlatformDesktop::GetAuthorizationURL(const TArray<ETapLoginScope>& Scopes) const
-{
-	return FTapLoginDesktopWebAuth::BuildAuthorizationURL(
-		GetAccountHost() + TEXT("/authorize"),
-		ClientID,
-		RedirectURI,
-		PendingState,
-		CodeChallenge,
-		ScopesToParam(Scopes));
-}
-
-// PKCE + MAC 工具已提取到 FTapLoginCryptoUtils
-
-// =============================================================================
-// 本地 HTTP 服务器 (参照 Unity WebController.cs)
-// =============================================================================
-
-int32 FTapLoginPlatformDesktop::FindAvailablePort()
-{
-	// 参照 Unity CodeUtil.GetRandomUnusedPort: 绑定端口 0 让系统分配
-	ISocketSubsystem* SocketSubsystem = ISocketSubsystem::Get(PLATFORM_SOCKETSUBSYSTEM);
-	FSocket* TempSocket = SocketSubsystem->CreateSocket(NAME_Stream, TEXT("TempPortFinder"), false);
-
-	if (TempSocket)
-	{
-		TSharedRef<FInternetAddr> Addr = SocketSubsystem->CreateInternetAddr();
-		Addr->SetIp(0x7F000001); // 127.0.0.1
-		Addr->SetPort(0);
-
-		if (TempSocket->Bind(*Addr))
-		{
-			if (TempSocket->Listen(1))
-			{
-				TSharedRef<FInternetAddr> BoundAddr = SocketSubsystem->CreateInternetAddr();
-				TempSocket->GetAddress(*BoundAddr);
-				int32 Port = BoundAddr->GetPort();
-				TempSocket->Close();
-				SocketSubsystem->DestroySocket(TempSocket);
-				UE_LOG(LogTapLogin, Log, TEXT("[Desktop] Found available port: %d"), Port);
-				return Port;
-			}
-		}
-		TempSocket->Close();
-		SocketSubsystem->DestroySocket(TempSocket);
-	}
-
-	UE_LOG(LogTapLogin, Warning, TEXT("[Desktop] Failed to find available port, using 18787"));
-	return 18787;
-}
-
-void FTapLoginPlatformDesktop::StartLocalServer()
-{
-	if (bServerRunning)
-	{
-		StopLocalServer();
-	}
-
-	LocalServerPort = FindAvailablePort();
-	UE_LOG(LogTapLogin, Log, TEXT("[Desktop] Starting local HTTP server on port %d..."), LocalServerPort);
-
-	FIPv4Endpoint Endpoint(FIPv4Address(127, 0, 0, 1), LocalServerPort);
-	TcpListener = new FTcpListener(Endpoint);
-	TcpListener->OnConnectionAccepted().BindRaw(this, &FTapLoginPlatformDesktop::HandleIncomingConnection);
-
-	if (TcpListener->IsActive())
-	{
-		bServerRunning = true;
-		UE_LOG(LogTapLogin, Log, TEXT("[Desktop] Local HTTP server started on port %d"), LocalServerPort);
-	}
-	else
-	{
-		UE_LOG(LogTapLogin, Error, TEXT("[Desktop] Failed to start local HTTP server on port %d"), LocalServerPort);
-		delete TcpListener;
-		TcpListener = nullptr;
-	}
-}
-
-void FTapLoginPlatformDesktop::StopLocalServer()
-{
-	if (TcpListener)
-	{
-		delete TcpListener;
-		TcpListener = nullptr;
-		bServerRunning = false;
-		UE_LOG(LogTapLogin, Log, TEXT("[Desktop] Local HTTP server stopped"));
-	}
-}
-
-bool FTapLoginPlatformDesktop::HandleIncomingConnection(FSocket* InSocket, const FIPv4Endpoint& Endpoint)
-{
-	UE_LOG(LogTapLogin, Log, TEXT("[Desktop] Incoming connection from %s"), *Endpoint.ToString());
-
-	AsyncTask(ENamedThreads::GameThread, [this, InSocket]()
-	{
-		ProcessHttpRequest(InSocket);
-	});
-
-	return true;
-}
-
-void FTapLoginPlatformDesktop::ProcessHttpRequest(FSocket* ClientSocket)
-{
-	if (!ClientSocket) return;
-
-	TArray<uint8> RecvBuffer;
-	RecvBuffer.SetNumZeroed(4096);
-	int32 BytesRead = 0;
-
-	ClientSocket->Wait(ESocketWaitConditions::WaitForRead, FTimespan::FromSeconds(5.0));
-	ClientSocket->Recv(RecvBuffer.GetData(), RecvBuffer.Num(), BytesRead);
-
-	ISocketSubsystem* SocketSubsystem = ISocketSubsystem::Get(PLATFORM_SOCKETSUBSYSTEM);
-
-	if (BytesRead <= 0)
-	{
-		ClientSocket->Close();
-		SocketSubsystem->DestroySocket(ClientSocket);
-		return;
-	}
-
-	FString RequestStr = FString(UTF8_TO_TCHAR(reinterpret_cast<const char*>(RecvBuffer.GetData())));
-	FString FirstLine = RequestStr.Left(RequestStr.Find(TEXT("\r\n")));
-	UE_LOG(LogTapLogin, Log, TEXT("[Desktop] HTTP: %s"), *TapLogPrivacy::Url(FirstLine, true));
-
-	TArray<FString> Parts;
-	FirstLine.ParseIntoArray(Parts, TEXT(" "), true);
-
-	FString Code;
-	FString Error;
-	bool bValidCallback = false;
-
-	if (Parts.Num() >= 2)
-	{
-		// 处理 OPTIONS 预检 (参照 Unity WebController)
-		if (Parts[0] == TEXT("OPTIONS"))
-		{
-			FString CorsResponse = TEXT("HTTP/1.1 200 OK\r\nAccess-Control-Allow-Origin: *\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
-			FTCHARToUTF8 Converter(*CorsResponse);
-			int32 BytesSent = 0;
-			ClientSocket->Send(reinterpret_cast<const uint8*>(Converter.Get()), Converter.Length(), BytesSent);
-			ClientSocket->Close();
-			SocketSubsystem->DestroySocket(ClientSocket);
-			return;
-		}
-
-		FString Path = Parts[1];
-		bValidCallback = FTapLoginDesktopWebAuth::TryParseCallbackPath(Path, PendingState, Code, Error);
-		if (!bValidCallback && Path.StartsWith(TEXT("/authorize")))
-		{
-			UE_LOG(LogTapLogin, Warning,
-				TEXT("[Desktop] Invalid callback - code present: %d, state mismatch or missing"),
-				!Code.IsEmpty());
-		}
-	}
-
-	// 发送 HTTP 响应
-	FString ResponseBody = bValidCallback
-		? TEXT("<html><head><meta charset='utf-8'><title>TapTap</title></head><body style='text-align:center;padding-top:50px;font-family:sans-serif'><h2>Login Successful</h2><p>You can close this window.</p></body></html>")
-		: TEXT("<html><body>Invalid request</body></html>");
-
-	FTCHARToUTF8 BodyConverter(*ResponseBody);
-	FString HttpResponse = FString::Printf(
-		TEXT("HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: %d\r\nConnection: close\r\n\r\n"),
-		BodyConverter.Length()
-	);
-
-	FTCHARToUTF8 HeaderConverter(*HttpResponse);
-	int32 BytesSent = 0;
-	ClientSocket->Send(reinterpret_cast<const uint8*>(HeaderConverter.Get()), HeaderConverter.Length(), BytesSent);
-	ClientSocket->Send(reinterpret_cast<const uint8*>(BodyConverter.Get()), BodyConverter.Length(), BytesSent);
-
-	ClientSocket->Close();
-	SocketSubsystem->DestroySocket(ClientSocket);
-
-	if (bValidCallback)
-	{
-		StopLocalServer();
-		if (!Error.IsEmpty())
-		{
-			HandleWebAuthorizationError(Error);
-		}
-		else if (!Code.IsEmpty())
-		{
-			HandleAuthorizationCode(Code);
-		}
-	}
-}
-
 TMap<FString, FString> FTapLoginPlatformDesktop::ParseQueryParams(const FString& QueryString)
 {
 	TMap<FString, FString> Result;
@@ -641,11 +441,6 @@ TMap<FString, FString> FTapLoginPlatformDesktop::ParseQueryParams(const FString&
 	return Result;
 }
 
-void FTapLoginPlatformDesktop::OpenBrowser(const FString& URL)
-{
-	FPlatformProcess::LaunchURL(*URL, nullptr, nullptr);
-}
-
 // =============================================================================
 // 面板回调
 // =============================================================================
@@ -655,8 +450,7 @@ void FTapLoginPlatformDesktop::HandlePanelClose()
 	UE_LOG(LogTapLogin, Log, TEXT("[Desktop] Panel closed by user"));
 	FTapLoginTracker::Get().TrackCancel(TEXT("loginWithScopes"), LoginSessionId);
 	FTapLoginPanelManager::Get().ClosePanel();
-	StopLocalServer();
-	ClearPendingOAuth();
+	ClearNativeAuthorization();
 
 	if (PendingAccessTokenCallback)
 	{
@@ -672,58 +466,10 @@ void FTapLoginPlatformDesktop::HandlePanelClose()
 	bLoginInProgress = false;
 }
 
-void FTapLoginPlatformDesktop::HandlePanelWebLogin(const TArray<FString>& ScopeStrings)
-{
-	UE_LOG(LogTapLogin, Log, TEXT("[Desktop] Panel web login requested"));
-	CurrentLoginType = FTapLoginTracker::LOGIN_TYPE_BROWSER;
-
-	CodeVerifier = FTapLoginCryptoUtils::GenerateCodeVerifier();
-	CodeChallenge = FTapLoginCryptoUtils::GenerateCodeChallenge(CodeVerifier);
-	PendingState = FGuid::NewGuid().ToString().Replace(TEXT("-"), TEXT(""));
-	bOAuthCallbackConsumed = false;
-	PendingScopes = ScopesFromStringArray(ScopeStrings);
-	bTokenExchangeInProgress = false;
-
-	// Localhost HTTP callback: Linux, all Editor builds, and packaged Mac.
-	// Mac never writes open-taptap-* into Info.plist, so DeepLink cannot be
-	// delivered by Launch Services (Editor or packaged .app). Windows packaged
-	// builds keep the registered URL Protocol path.
-#if WITH_EDITOR || PLATFORM_LINUX || PLATFORM_MAC
-	StartLocalServer();
-	if (!bServerRunning)
-	{
-		const FString ErrorMessage = TEXT("Failed to start localhost login callback server");
-		UE_LOG(LogTapLogin, Error, TEXT("[Desktop] %s"), *ErrorMessage);
-		FTapLoginPanelManager::Get().OnWebLoginFailed();
-		if (PendingAccessTokenCallback)
-		{
-			CompleteAccessTokenAuthorizationFailure(-1, ErrorMessage);
-		}
-		else if (PendingCallback.GetInterface())
-		{
-			PendingCallback->OnLoginFailed(-1, ErrorMessage);
-			PendingCallback = nullptr;
-		}
-		return;
-	}
-	RedirectURI = FString::Printf(TEXT("http://127.0.0.1:%d/authorize"), LocalServerPort);
-#elif PLATFORM_WINDOWS
-	RedirectURI = FString::Printf(TEXT("open-taptap-%s://authorize"), *ClientID);
-#endif
-
-	SavePendingOAuth();
-	const FString AuthURL = GetAuthorizationURL(PendingScopes);
-	UE_LOG(LogTapLogin, Log,
-		TEXT("[Desktop] Opening browser for OAuth - platform: %s, port: %d, redirect_uri: %s"),
-		*GetPlatformName(), LocalServerPort, *RedirectURI);
-	UE_LOG(LogTapLogin, Verbose, TEXT("[Desktop] OAuth authorization URL prepared"));
-	OpenBrowser(AuthURL);
-}
-
-void FTapLoginPlatformDesktop::HandlePanelAuthSuccess(const FTapTokenData& TokenData)
+void FTapLoginPlatformDesktop::HandlePanelAuthSuccess(const FTapTokenData& TokenData, bool bWebLogin)
 {
 	UE_LOG(LogTapLogin, Log, TEXT("[Desktop] Panel QR auth success - kid: %s"), TEXT("[REDACTED]"));
-	CurrentLoginType = FTapLoginTracker::LOGIN_TYPE_CODE;
+	CurrentLoginType = bWebLogin ? FTapLoginTracker::LOGIN_TYPE_BROWSER : FTapLoginTracker::LOGIN_TYPE_CODE;
 	FTapLoginPanelManager::Get().ClosePanel();
 
 	const TArray<FString> AuthorizedScopes = TokenData.Scopes;
@@ -751,52 +497,8 @@ void FTapLoginPlatformDesktop::HandlePanelAuthSuccess(const FTapTokenData& Token
 }
 
 // =============================================================================
-// OAuth 流程 (参照 Unity LoginService.cs)
+// TapTap 客户端授权码换取 Token (参照 Unity LoginService.cs)
 // =============================================================================
-
-void FTapLoginPlatformDesktop::HandleWebAuthorizationError(const FString& Error)
-{
-	if (Error == FTapHttpErrorConstants::ERROR_ACCESS_DENIED)
-	{
-		UE_LOG(LogTapLogin, Log, TEXT("[Desktop] Browser authorization cancelled: %s"), *Error);
-		FTapLoginTracker::Get().TrackCancel(TEXT("loginWithScopes"), LoginSessionId, CurrentLoginType);
-		FTapLoginPanelManager::Get().ShowWebLoginCancelledToast();
-		if (PendingAccessTokenCallback)
-		{
-			CompleteAccessTokenAuthorizationCancelled();
-		}
-		else if (PendingCallback.GetInterface())
-		{
-			PendingCallback->OnLoginCancelled();
-			PendingCallback = nullptr;
-		}
-		bLoginInProgress = false;
-		ClearPendingOAuth();
-		return;
-	}
-
-	const FString ErrorMessage = Error.IsEmpty() ? TEXT("authorization failed") : Error;
-	UE_LOG(LogTapLogin, Error, TEXT("[Desktop] Browser authorization failed: %s"), *ErrorMessage);
-	FTapLoginTracker::Get().TrackFailure(TEXT("loginWithScopes"), LoginSessionId,
-		CurrentLoginType, -1, ErrorMessage);
-	if (PendingAccessTokenCallback)
-	{
-		CompleteAccessTokenAuthorizationFailure(-1, ErrorMessage);
-	}
-	else if (PendingCallback.GetInterface())
-	{
-		PendingCallback->OnLoginFailed(-1, ErrorMessage);
-		PendingCallback = nullptr;
-	}
-	bLoginInProgress = false;
-	ClearPendingOAuth();
-}
-
-void FTapLoginPlatformDesktop::HandleAuthorizationCode(const FString& Code)
-{
-	UE_LOG(LogTapLogin, Log, TEXT("[Desktop] Exchanging authorization code for token..."));
-	ExchangeCodeForToken(Code);
-}
 
 void FTapLoginPlatformDesktop::ExchangeCodeForToken(const FString& Code)
 {
@@ -829,10 +531,9 @@ void FTapLoginPlatformDesktop::ExchangeCodeForToken(const FString& Code)
 
 			AsyncTask(ENamedThreads::GameThread, [this, bSuccess, ErrorMessage, StatusCode, JsonObject]()
 			{
-				bTokenExchangeInProgress = false;
 				if (bSuccess && JsonObject.IsValid())
 				{
-					ClearPendingOAuth();
+					ClearNativeAuthorization();
 					// 服务端响应可能有 data 包装层: {"data":{...}, "success":true}
 					const TSharedPtr<FJsonObject>* DataObj = nullptr;
 					TSharedPtr<FJsonObject> Source = JsonObject;
@@ -864,7 +565,7 @@ void FTapLoginPlatformDesktop::ExchangeCodeForToken(const FString& Code)
 						FTapLoginPanelManager::Get().ClosePanel();
 						FTapLoginTracker::Get().TrackSuccess(TEXT("loginWithScopes"), LoginSessionId, CurrentLoginType);
 						UE_LOG(LogTapLogin, Log,
-							TEXT("[Desktop] Token-only web auth success - no profile fetch, no login state save"));
+							TEXT("[Desktop] Token-only client auth success - no profile fetch, no login state save"));
 						CompleteAccessTokenAuthorizationSuccess(MakeAccessToken(
 							NewTokenKid,
 							NewTokenType,
@@ -1074,113 +775,13 @@ void FTapLoginPlatformDesktop::FetchUserInfoWithToken(
 	);
 }
 
-// =============================================================================
-// DeepLink 回调 (open-taptap-{clientId}://authorize?code=xxx&state=yyy)
-// =============================================================================
-
-void FTapLoginPlatformDesktop::HandleDeepLinkCallback(const FString& Code, const FString& State, const FString& Error)
+void FTapLoginPlatformDesktop::ClearNativeAuthorization()
 {
-	UE_LOG(LogTapLogin, Log, TEXT("[Desktop] DeepLink callback received"));
-
-	// 验证 State (CSRF 保护)
-	if (PendingState.IsEmpty() || State != PendingState)
-	{
-		UE_LOG(LogTapLogin, Warning, TEXT("[Desktop] DeepLink state mismatch"));
-		return;
-	}
-
-	if (bOAuthCallbackConsumed || bTokenExchangeInProgress)
-	{
-		UE_LOG(LogTapLogin, Log, TEXT("[Desktop] Ignoring duplicate DeepLink callback"));
-		return;
-	}
-
-	if (!Error.IsEmpty())
-	{
-		bOAuthCallbackConsumed = true;
-		HandleWebAuthorizationError(Error);
-		return;
-	}
-
-	if (Code.IsEmpty())
-	{
-		HandleWebAuthorizationError(TEXT("authorization callback did not contain a code"));
-		return;
-	}
-
-	bOAuthCallbackConsumed = true;
-	bTokenExchangeInProgress = true;
-
-	// 停止本地 HTTP 服务器 (不再需要 fallback)
-	StopLocalServer();
-
-	// 走同样的 auth code 交换流程
-	HandleAuthorizationCode(Code);
-}
-
-void FTapLoginPlatformDesktop::SavePendingOAuth()
-{
-	PendingOAuthPrefs.Set(TEXT("client_id"), ClientID);
-	PendingOAuthPrefs.Set(TEXT("redirect_uri"), RedirectURI);
-	PendingOAuthPrefs.Set(TEXT("state"), PendingState);
-	PendingOAuthPrefs.Set(TEXT("code_verifier"), CodeVerifier);
-	PendingOAuthPrefs.Set(TEXT("code_challenge"), CodeChallenge);
-	PendingOAuthPrefs.Set(TEXT("scopes"), ScopesToParam(PendingScopes));
-	PendingOAuthPrefs.SetInt64(TEXT("created_at"), FDateTime::UtcNow().ToUnixTimestamp());
-	PendingOAuthPrefs.Save();
-	bPendingOAuthLoaded = true;
-}
-
-void FTapLoginPlatformDesktop::LoadPendingOAuth()
-{
-	const FString SavedState = PendingOAuthPrefs.GetString(TEXT("state"));
-	const FString SavedVerifier = PendingOAuthPrefs.GetString(TEXT("code_verifier"));
-	const int64 CreatedAt = PendingOAuthPrefs.GetInt64(TEXT("created_at"));
-	const int64 Now = FDateTime::UtcNow().ToUnixTimestamp();
-	constexpr int64 PendingLifetimeSeconds = 10 * 60;
-
-	if (SavedState.IsEmpty() || SavedVerifier.IsEmpty() || CreatedAt <= 0 || Now - CreatedAt > PendingLifetimeSeconds)
-	{
-		if (!SavedState.IsEmpty())
-		{
-			UE_LOG(LogTapLogin, Log, TEXT("[Desktop] Ignoring expired OAuth transaction"));
-		}
-		ClearPendingOAuth();
-		return;
-	}
-
-	if (!PendingOAuthPrefs.GetString(TEXT("client_id")).Equals(ClientID, ESearchCase::CaseSensitive))
-	{
-		ClearPendingOAuth();
-		return;
-	}
-
-	PendingState = SavedState;
-	CodeVerifier = SavedVerifier;
-	CodeChallenge = PendingOAuthPrefs.GetString(TEXT("code_challenge"));
-	RedirectURI = PendingOAuthPrefs.GetString(TEXT("redirect_uri"));
-	PendingScopes.Empty();
-	FString SavedScopes = PendingOAuthPrefs.GetString(TEXT("scopes"));
-	TArray<FString> ScopeStrings;
-	SavedScopes.ParseIntoArray(ScopeStrings, TEXT(","), true);
-	PendingScopes = ScopesFromStringArray(ScopeStrings);
-	bPendingOAuthLoaded = true;
-	CurrentLoginType = FTapLoginTracker::LOGIN_TYPE_BROWSER;
-	UE_LOG(LogTapLogin, Log, TEXT("[Desktop] Restored pending OAuth transaction for cold start"));
-}
-
-void FTapLoginPlatformDesktop::ClearPendingOAuth()
-{
-	PendingOAuthPrefs.Clear();
-	PendingOAuthPrefs.Save();
 	PendingState.Empty();
 	CodeVerifier.Empty();
 	CodeChallenge.Empty();
 	RedirectURI.Empty();
 	PendingScopes.Empty();
-	bPendingOAuthLoaded = false;
-	bOAuthCallbackConsumed = false;
-	bTokenExchangeInProgress = false;
 }
 void FTapLoginPlatformDesktop::SaveLoginState()
 {
@@ -1193,6 +794,7 @@ void FTapLoginPlatformDesktop::SaveLoginState()
 	if (AccountSnapshot.IsSet())
 	{
 		const FTapAccount& Acct = AccountSnapshot.GetValue();
+		LoginPrefs.Set(TEXT("client_id"), ClientID);
 		LoginPrefs.Set(TEXT("kid"), Acct.AccessToken.Kid);
 		// Unity PC refreshes with kid; do not persist the raw OAuth access_token.
 		LoginPrefs.Remove(TEXT("access_token"));
@@ -1215,6 +817,7 @@ void FTapLoginPlatformDesktop::SaveLoginState()
 
 void FTapLoginPlatformDesktop::LoadLoginState()
 {
+	if (LoginPrefs.GetString(TEXT("client_id")) != ClientID) return;
 	FString SavedKid = LoginPrefs.GetString(TEXT("kid"));
 	if (SavedKid.IsEmpty())
 	{
@@ -1373,7 +976,7 @@ void FTapLoginPlatformDesktop::AuthorizeForAccessToken(
 		return;
 	}
 
-	bLoginInProgress = true;
+	BeginLogin();
 	PendingCallback = nullptr;
 	PendingAccessTokenCallback = MoveTemp(Callback);
 	PendingScopes = Scopes;
@@ -1394,7 +997,6 @@ void FTapLoginPlatformDesktop::AuthorizeForAccessToken(
 		ClientID,
 		ScopeStringArray,
 		FOnLoginPanelClose::CreateRaw(this, &FTapLoginPlatformDesktop::HandlePanelClose),
-		FOnLoginPanelWebLogin::CreateRaw(this, &FTapLoginPlatformDesktop::HandlePanelWebLogin),
 		FOnLoginPanelAuthSuccess::CreateRaw(this, &FTapLoginPlatformDesktop::HandlePanelAuthSuccess)
 	);
 
@@ -1741,9 +1343,6 @@ void FTapLoginPlatformDesktop::HandleNativeAuthorizationComplete(bool bCancelled
 		HandleNativeAuthorizationFailure(TEXT("authorization callback did not contain a code"));
 		return;
 	}
-
-	bOAuthCallbackConsumed = true;
-	bTokenExchangeInProgress = true;
 	ExchangeCodeForToken(Code);
 }
 #endif

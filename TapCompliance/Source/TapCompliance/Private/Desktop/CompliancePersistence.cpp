@@ -8,6 +8,10 @@
 #include "ComplianceState.h"
 #include "TapComplianceModule.h"
 #include "Internal/Storage/TapMachineBoundPrefs.h"
+#include "Internal/Storage/TapSharedCacheFile.h"
+#include "Containers/Ticker.h"
+#include "Misc/FileHelper.h"
+#include "HAL/FileManager.h"
 #include "Dom/JsonObject.h"
 #include "Misc/Paths.h"
 #include "Misc/SecureHash.h"
@@ -15,29 +19,153 @@
 #include "Serialization/JsonSerializer.h"
 
 // =============================================================================
-// 单例 FTapMachineBoundPrefs
+// 按用户分文件；公共配置独立保存。每次操作加载当前文件，避免复用其他用户的快照。
 // =============================================================================
 
-FTapMachineBoundPrefs& FCompliancePersistence::GetPrefs()
+namespace
 {
-	static FTapMachineBoundPrefs Prefs;
-	static bool bInited = false;
-	if (!bInited)
+	struct FPendingCache
 	{
-		const FString& ClientId = FComplianceState::Get().ClientId;
-		const FString Sub = ClientId.IsEmpty() ? TEXT("default") : ClientId;
-		// FTapMachineBoundPrefs.Init 接受相对 ProjectSavedDir 的路径
-		const FString RelativePath = FPaths::Combine(TEXT("TapCompliance"), Sub, TEXT("cache.json"));
-		Prefs.Init(RelativePath);
-		bInited = true;
+		TSharedPtr<FTapMachineBoundPrefs> Prefs;
+		TSet<FString> ClearMarkers;
+	};
+	// Keep failed writes alive beyond a single API call; serialize module operations with CacheLock.
+	TMap<FString, FPendingCache> PendingCaches;
+	FCriticalSection CacheLock;
+	TSet<FString> InvalidMarkers;
+	FTSTicker::FDelegateHandle RetryTicker;
+	struct FRetryCleanup
+	{
+		~FRetryCleanup() { FTSTicker::GetCoreTicker().RemoveTicker(RetryTicker); }
+	} RetryCleanup;
 
-		if (Prefs.WasInvalidated())
+	FString MarkerPath(const FTapMachineBoundPrefs& Prefs, const FString& Key)
+	{
+		return Prefs.GetFilePath() + TEXT(".invalid.") + FMD5::HashAnsiString(*Key);
+	}
+
+	void FlushPendingCaches()
+	{
+		FScopeLock Guard(&CacheLock);
+		for (auto It = PendingCaches.CreateIterator(); It; ++It)
 		{
-			UE_LOG(LogTapCompliance, Warning,
-				TEXT("[Persistence] Machine fingerprint mismatch — TapCompliance cache wiped, will refetch from server"));
+			auto& Pending = It.Value();
+			Pending.Prefs->Save();
+			if (!Pending.Prefs->IsPersisted()) continue;
+			for (auto Marker = Pending.ClearMarkers.CreateIterator(); Marker; ++Marker)
+			{
+				if (IFileManager::Get().Delete(**Marker, false, true))
+				{
+					InvalidMarkers.Remove(*Marker);
+					Marker.RemoveCurrent();
+				}
+			}
+			if (Pending.ClearMarkers.IsEmpty()) It.RemoveCurrent();
+		}
+	}
+
+	void RetainPending(const TSharedPtr<FTapMachineBoundPrefs>& Prefs)
+	{
+		PendingCaches.FindOrAdd(Prefs->GetFilePath()).Prefs = Prefs;
+		if (!RetryTicker.IsValid())
+		{
+			RetryTicker = FTSTicker::GetCoreTicker().AddTicker(FTickerDelegate::CreateLambda([](float)
+			{
+				FScopeLock Guard(&CacheLock);
+				FlushPendingCaches();
+				if (!PendingCaches.IsEmpty()) return true;
+				RetryTicker.Reset();
+				return false;
+			}), 1.0f);
+		}
+	}
+
+	bool IsInvalid(const FTapMachineBoundPrefs& Prefs, const FString& Key)
+	{
+		const FString Marker = MarkerPath(Prefs, Key);
+		return InvalidMarkers.Contains(Marker) || IFileManager::Get().FileExists(*Marker);
+	}
+
+	bool SaveValue(const TSharedPtr<FTapMachineBoundPrefs>& Prefs, const FString& Key, const FString& Value)
+	{
+		Prefs->Set(Key, Value);
+		RetainPending(Prefs);
+		PendingCaches[Prefs->GetFilePath()].ClearMarkers.Add(MarkerPath(*Prefs, Key));
+		FlushPendingCaches();
+		return Prefs->IsPersisted() && !IsInvalid(*Prefs, Key);
+	}
+
+	bool DeleteValue(const TSharedPtr<FTapMachineBoundPrefs>& Prefs, const FString& Key)
+	{
+		const FString Marker = MarkerPath(*Prefs, Key);
+		InvalidMarkers.Add(Marker);
+		// Independent of the busy data-file lease; survives a crash before deferred cleanup.
+		const bool bInvalidated = FTapSharedCacheFile::WriteUnderLock(Marker, TEXT("invalid"));
+		Prefs->Remove(Key); // Records deletion even if initial loading is deferred.
+		RetainPending(Prefs);
+		PendingCaches[Prefs->GetFilePath()].ClearMarkers.Remove(Marker);
+		FlushPendingCaches();
+		return bInvalidated || Prefs->IsPersisted();
+	}
+}
+
+TSharedPtr<FTapMachineBoundPrefs> FCompliancePersistence::LoadPrefs(
+	const FString& FileName, const TArray<FString>& LegacyKeys)
+{
+	const FString& ClientId = FComplianceState::Get().ClientId;
+	const FString Sub = ClientId.IsEmpty() ? TEXT("default") : ClientId;
+	const FString Directory = FPaths::Combine(TEXT("TapCompliance"), Sub);
+	const FString RelativePath = FPaths::Combine(Directory, FileName);
+	FlushPendingCaches();
+	if (const auto* Pending = PendingCaches.Find(FPaths::Combine(FPaths::ProjectSavedDir(), RelativePath)))
+		return Pending->Prefs;
+	const bool bAlreadyExists = IFileManager::Get().FileExists(
+		*FPaths::Combine(FPaths::ProjectSavedDir(), RelativePath));
+	TSharedPtr<FJsonObject> Legacy;
+	const FString LegacyPath = FPaths::Combine(FPaths::ProjectSavedDir(), Directory, TEXT("cache.json"));
+	if (!bAlreadyExists && !LegacyKeys.IsEmpty() && IFileManager::Get().FileExists(*LegacyPath))
+	{
+		// Do not initialize/rebuild a legacy Prefs or create a migration marker before it can be read.
+		auto Lease = FTapSharedCacheFile::TryAcquire(LegacyPath);
+		FString Json;
+		if (!Lease || !FFileHelper::LoadFileToString(Json, *LegacyPath) ||
+			!FJsonSerializer::Deserialize(TJsonReaderFactory<>::Create(Json), Legacy) || !Legacy)
+			return nullptr;
+	}
+	auto Prefs = MakeShared<FTapMachineBoundPrefs>();
+	Prefs->Init(RelativePath);
+
+	// 已有新文件始终优先，包括已登出或机器指纹失效后清空的文件。
+	if (!bAlreadyExists && Legacy)
+	{
+		FString OldFingerprint;
+		const FString Fingerprint = FTapMachineBoundPrefs::ComputeFingerprint();
+		if (!Fingerprint.IsEmpty() && Legacy->TryGetStringField(TEXT("tap_machine_fp"), OldFingerprint) && OldFingerprint == Fingerprint)
+		{
+			for (const FString& Key : LegacyKeys)
+			{
+				FString Value;
+				if (Legacy->TryGetStringField(Key, Value) && !Value.IsEmpty())
+				{
+					Prefs->Set(Key, Value);
+				}
+			}
+			RetainPending(Prefs);
+			FlushPendingCaches();
 		}
 	}
 	return Prefs;
+}
+
+TSharedPtr<FTapMachineBoundPrefs> FCompliancePersistence::LoadUserPrefs(const FString& UserId)
+{
+	return LoadPrefs(FPaths::Combine(TEXT("users"), HashUserId(UserId) + TEXT(".json")),
+		{KeyForVerification(UserId), KeyForUserAntiConfig(UserId), KeyForFirstPassTip(UserId)});
+}
+
+TSharedPtr<FTapMachineBoundPrefs> FCompliancePersistence::LoadConfigPrefs()
+{
+	return LoadPrefs(TEXT("config.json"), {KeyForRealNameConfig()});
 }
 
 // =============================================================================
@@ -115,7 +243,11 @@ TSharedPtr<FJsonObject> FCompliancePersistence::ParseJsonString(const FString& J
 
 bool FCompliancePersistence::LoadVerification(const FString& UserId, FComplianceVerification& OutResult)
 {
-	const FString Raw = GetPrefs().GetString(KeyForVerification(UserId));
+	FScopeLock Guard(&CacheLock);
+	auto Prefs = LoadUserPrefs(UserId);
+	if (!Prefs) return false;
+	const FString Raw = Prefs->GetString(KeyForVerification(UserId));
+	if (IsInvalid(*Prefs, KeyForVerification(UserId))) return false;
 	if (Raw.IsEmpty())
 	{
 		return false;
@@ -136,6 +268,7 @@ bool FCompliancePersistence::LoadVerification(const FString& UserId, FCompliance
 
 bool FCompliancePersistence::SaveVerification(const FString& UserId, const FComplianceVerification& Result)
 {
+	FScopeLock Guard(&CacheLock);
 	FComplianceVerification ToSave = Result;
 	if (ToSave.UserId.IsEmpty())
 	{
@@ -146,19 +279,18 @@ bool FCompliancePersistence::SaveVerification(const FString& UserId, const FComp
 	{
 		return false;
 	}
-	GetPrefs().Set(KeyForVerification(UserId), Json);
-	GetPrefs().Save();
-	return true;
+	auto Prefs = LoadUserPrefs(UserId);
+	if (!Prefs) return false;
+	return SaveValue(Prefs, KeyForVerification(UserId), Json);
 }
 
 bool FCompliancePersistence::DeleteVerification(const FString& UserId)
 {
-	const bool bRemoved = GetPrefs().Remove(KeyForVerification(UserId));
-	if (bRemoved)
-	{
-		GetPrefs().Save();
-	}
-	return bRemoved;
+	FScopeLock Guard(&CacheLock);
+	// Logout must not depend on reading/migrating a busy legacy cache.
+	auto Prefs = LoadPrefs(FPaths::Combine(TEXT("users"), HashUserId(UserId) + TEXT(".json")), {});
+	if (!Prefs) return false;
+	return DeleteValue(Prefs, KeyForVerification(UserId));
 }
 
 // =============================================================================
@@ -167,7 +299,11 @@ bool FCompliancePersistence::DeleteVerification(const FString& UserId)
 
 bool FCompliancePersistence::LoadUserAntiConfig(const FString& UserId, FUserAntiConfig& OutResult)
 {
-	const FString Raw = GetPrefs().GetString(KeyForUserAntiConfig(UserId));
+	FScopeLock Guard(&CacheLock);
+	auto Prefs = LoadUserPrefs(UserId);
+	if (!Prefs) return false;
+	const FString Raw = Prefs->GetString(KeyForUserAntiConfig(UserId));
+	if (IsInvalid(*Prefs, KeyForUserAntiConfig(UserId))) return false;
 	if (Raw.IsEmpty())
 	{
 		return false;
@@ -183,24 +319,23 @@ bool FCompliancePersistence::LoadUserAntiConfig(const FString& UserId, FUserAnti
 
 bool FCompliancePersistence::SaveUserAntiConfig(const FString& UserId, const FUserAntiConfig& Result)
 {
+	FScopeLock Guard(&CacheLock);
 	const FString Json = SerializeJsonObject(Result.ToJson());
 	if (Json.IsEmpty())
 	{
 		return false;
 	}
-	GetPrefs().Set(KeyForUserAntiConfig(UserId), Json);
-	GetPrefs().Save();
-	return true;
+	auto Prefs = LoadUserPrefs(UserId);
+	if (!Prefs) return false;
+	return SaveValue(Prefs, KeyForUserAntiConfig(UserId), Json);
 }
 
 bool FCompliancePersistence::DeleteUserAntiConfig(const FString& UserId)
 {
-	const bool bRemoved = GetPrefs().Remove(KeyForUserAntiConfig(UserId));
-	if (bRemoved)
-	{
-		GetPrefs().Save();
-	}
-	return bRemoved;
+	FScopeLock Guard(&CacheLock);
+	auto Prefs = LoadPrefs(FPaths::Combine(TEXT("users"), HashUserId(UserId) + TEXT(".json")), {});
+	if (!Prefs) return false;
+	return DeleteValue(Prefs, KeyForUserAntiConfig(UserId));
 }
 
 // =============================================================================
@@ -209,7 +344,10 @@ bool FCompliancePersistence::DeleteUserAntiConfig(const FString& UserId)
 
 bool FCompliancePersistence::LoadRealNameConfig(FRealNameConfigResult& OutResult)
 {
-	const FString Raw = GetPrefs().GetString(KeyForRealNameConfig());
+	FScopeLock Guard(&CacheLock);
+	auto Prefs = LoadConfigPrefs();
+	if (!Prefs) return false;
+	const FString Raw = Prefs->GetString(KeyForRealNameConfig());
 	if (Raw.IsEmpty())
 	{
 		return false;
@@ -225,14 +363,15 @@ bool FCompliancePersistence::LoadRealNameConfig(FRealNameConfigResult& OutResult
 
 bool FCompliancePersistence::SaveRealNameConfig(const FRealNameConfigResult& Result)
 {
+	FScopeLock Guard(&CacheLock);
 	const FString Json = SerializeJsonObject(Result.ToJson());
 	if (Json.IsEmpty())
 	{
 		return false;
 	}
-	GetPrefs().Set(KeyForRealNameConfig(), Json);
-	GetPrefs().Save();
-	return true;
+	auto Prefs = LoadConfigPrefs();
+	if (!Prefs) return false;
+	return SaveValue(Prefs, KeyForRealNameConfig(), Json);
 }
 
 // =============================================================================
@@ -241,13 +380,18 @@ bool FCompliancePersistence::SaveRealNameConfig(const FRealNameConfigResult& Res
 
 bool FCompliancePersistence::HasShownFirstPassTip(const FString& UserId)
 {
-	return !GetPrefs().GetString(KeyForFirstPassTip(UserId)).IsEmpty();
+	FScopeLock Guard(&CacheLock);
+	auto Prefs = LoadUserPrefs(UserId);
+	if (!Prefs) return false;
+	return !Prefs->GetString(KeyForFirstPassTip(UserId)).IsEmpty();
 }
 
 void FCompliancePersistence::MarkFirstPassTipShown(const FString& UserId)
 {
-	GetPrefs().Set(KeyForFirstPassTip(UserId), TEXT("1"));
-	GetPrefs().Save();
+	FScopeLock Guard(&CacheLock);
+	auto Prefs = LoadUserPrefs(UserId);
+	if (!Prefs) return;
+	SaveValue(Prefs, KeyForFirstPassTip(UserId), TEXT("1"));
 }
 
 #endif // PLATFORM_WINDOWS || PLATFORM_MAC || PLATFORM_LINUX

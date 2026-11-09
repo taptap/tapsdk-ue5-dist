@@ -16,11 +16,17 @@
 #include "Async/Async.h"
 #include "Dom/JsonObject.h"
 #include "HAL/PlatformMisc.h"
+#include "HAL/PlatformFileManager.h"
 #include "Misc/FileHelper.h"
 #include "Misc/Paths.h"
 #include "Serialization/JsonReader.h"
 #include "Serialization/JsonSerializer.h"
 #include "Serialization/JsonWriter.h"
+
+#if WITH_DEV_AUTOMATION_TESTS
+#include "Misc/AutomationTest.h"
+#include "Misc/ScopeExit.h"
+#endif
 
 namespace
 {
@@ -55,9 +61,19 @@ namespace
 		Obj->SetNumberField(TEXT("log_to_console"), Cfg.bEnableLog ? 1 : 0);
 		Obj->SetNumberField(TEXT("log_level"),      3);
 
-		const FString DataDir = FPaths::Combine(
+		FString DataDir = FPaths::Combine(
 			FPaths::ProjectSavedDir(),
 			TEXT("cloudsave_") + Cfg.ClientID);
+		DataDir = FPaths::ConvertRelativePathToFull(DataDir);
+		FPaths::NormalizeDirectoryName(DataDir);
+		// Match Unity: the native SDK must receive an existing data directory.
+		IPlatformFile& PlatformFile = FPlatformFileManager::Get().GetPlatformFile();
+		if (!PlatformFile.CreateDirectoryTree(*DataDir) || !PlatformFile.DirectoryExists(*DataDir))
+		{
+			UE_LOG(LogTapCloudSave, Warning,
+				TEXT("[CloudSave-Desktop] cannot create data directory '%s'; native initialization skipped"), *DataDir);
+			return FString();
+		}
 		Obj->SetStringField(TEXT("data_dir"),       DataDir);
 
 		Obj->SetStringField(TEXT("client_id"),      Cfg.ClientID);
@@ -178,6 +194,56 @@ bool FTapCloudSavePlatformDesktop::IsInitialized() const
 	return bInitNative;
 }
 
+#if WITH_DEV_AUTOMATION_TESTS && (PLATFORM_WINDOWS || PLATFORM_MAC || PLATFORM_LINUX)
+// Exercise the actual config builder without loading or starting the native SDK.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FTapCloudSaveDataDirectoryTest,
+	"TapSDK.CloudSave.Desktop.DataDirectory.PreparesBeforeNativeStartup",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FTapCloudSaveDataDirectoryTest::RunTest(const FString&)
+{
+	const FTapTapSdkOptions OriginalConfig = FTapSdkConfigState::GetCurrentConfig();
+	FTapTapSdkOptions Config;
+	Config.ClientID = TEXT("Automation-") + FGuid::NewGuid().ToString(EGuidFormats::Digits);
+	const FString DataDir = FPaths::ConvertRelativePathToFull(
+		FPaths::Combine(FPaths::ProjectSavedDir(), TEXT("cloudsave_") + Config.ClientID));
+	IPlatformFile& Files = FPlatformFileManager::Get().GetPlatformFile();
+	ON_SCOPE_EXIT
+	{
+		Files.DeleteFile(*DataDir);
+		Files.DeleteDirectory(*DataDir);
+		FTapSdkConfigState::SetCurrentConfig(OriginalConfig);
+	};
+	FTapSdkConfigState::SetCurrentConfig(Config);
+	TestFalse(TEXT("Fresh install has no data directory"), Files.DirectoryExists(*DataDir));
+	const TOptional<FTapAccount> Account;
+	const FString Json = MakeInitConfigJson(Account);
+	TestTrue(TEXT("Directory exists before native initialization"), Files.DirectoryExists(*DataDir));
+	TSharedPtr<FJsonObject> NativeConfig;
+	if (!TestTrue(TEXT("Prepared directory produces valid config"),
+		FJsonSerializer::Deserialize(TJsonReaderFactory<>::Create(Json), NativeConfig) && NativeConfig.IsValid()))
+	{
+		return false;
+	}
+	const FString NativeDir = NativeConfig->GetStringField(TEXT("data_dir"));
+	TestTrue(TEXT("Native receives the prepared directory"), FPaths::IsSamePath(NativeDir, DataDir));
+	TestFalse(TEXT("Native receives an absolute path"), FPaths::IsRelative(NativeDir));
+	TestFalse(TEXT("Existing directory can be reused"), MakeInitConfigJson(Account).IsEmpty());
+	if (!TestTrue(TEXT("Remove empty directory"), Files.DeleteDirectory(*DataDir)) ||
+		!TestTrue(TEXT("Simulate a file occupying the directory path"), FFileHelper::SaveStringToFile(TEXT("occupied"), *DataDir)))
+	{
+		return false;
+	}
+	TestTrue(TEXT("Directory failure prevents native init config"), MakeInitConfigJson(Account).IsEmpty());
+	FString Contents;
+	TestTrue(TEXT("Conflicting file remains readable"), FFileHelper::LoadFileToString(Contents, *DataDir));
+	TestEqual(TEXT("Conflicting file is preserved"), Contents, FString(TEXT("occupied")));
+	TestTrue(TEXT("Remove obstruction"), Files.DeleteFile(*DataDir));
+	TestFalse(TEXT("Preparation succeeds after obstruction is removed"), MakeInitConfigJson(Account).IsEmpty());
+	return true;
+}
+#endif
+
 bool FTapCloudSavePlatformDesktop::WaitForNativeInitialization()
 {
 	bool bStartInitialization = false;
@@ -290,7 +356,7 @@ void FTapCloudSavePlatformDesktop::Initialize()
 	{
 		const TOptional<FTapAccount> Account = FTapLoginInternal::PeekCachedAccount();
 		const FString Cfg = MakeInitConfigJson(Account);
-		const int Rc = TapCloudSaveDesktopWrapper::CallInitialize(Cfg);
+		const int Rc = Cfg.IsEmpty() ? -1 : TapCloudSaveDesktopWrapper::CallInitialize(Cfg);
 		UE_LOG(LogTapCloudSave, Log, TEXT("TapSdkCloudSaveInitialize rc=%d"), Rc);
 		{
 			FScopeLock Lock(&Self->InitLock);

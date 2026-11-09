@@ -23,6 +23,7 @@
 #include "Serialization/JsonSerializer.h"
 #include "Serialization/JsonWriter.h"
 #include "Misc/FileHelper.h"
+#include "Internal/Storage/TapSharedCacheFile.h"
 #include "Misc/Paths.h"
 #include "Internal/Platform/TapAppDuration.h"
 #include "Desktop/Openlog/TapOpenlogNativeAPI.h"
@@ -71,6 +72,8 @@ void FTapCoreDesktop::ApplyCachedHeartbeat(const FTapTapSdkOptions& Config)
 {
 	FString CachedSettings;
 	const FString SettingsPath = GetClientSettingsPath(Config);
+	auto Lease = FTapSharedCacheFile::TryAcquire(SettingsPath);
+	if (!Lease) return; // Optional cache must never block the network initialization path.
 	if (!FFileHelper::LoadFileToString(CachedSettings, *SettingsPath))
 	{
 		return;
@@ -315,7 +318,7 @@ void FTapCoreDesktop::RequestGatekeeperValidation(const FTapTapSdkOptions& Confi
 					}
 					ApplyHeartbeat(bHeartbeat);
 
-					if (!FFileHelper::SaveStringToFile(DataStr, *ClientSettingsPath))
+					if (!FTapSharedCacheFile::Write(ClientSettingsPath, DataStr))
 					{
 						UE_LOG(LogTapDesktop, Warning,
 							TEXT("Failed to cache Gatekeeper settings: %s"), *ClientSettingsPath);

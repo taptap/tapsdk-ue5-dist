@@ -30,9 +30,6 @@ public:
 	static FString BuildAuthorizationHeaderForToken(const FTapAccessToken&Token,const FString&M,const FString&U,const FString&H,const FString&P,int64 T){return FTapTapLogin::BuildAuthorizationHeaderForToken(Token,M,U,H,P,T);}
 	static void AuthorizeForAccessToken(const TArray<ETapLoginScope>& Scopes, FTapAccessTokenCallback Callback);
 	static void Authorize(const TArray<ETapLoginScope>&S,TScriptInterface<ITapLoginCallback>C){FTapTapLogin::Authorize(S,C);}
-#if PLATFORM_WINDOWS
-	static void HandleWindowsDeepLinkURL(const FString& URL);
-#endif
 #if WITH_DEV_AUTOMATION_TESTS
 	static void InjectTokenForTest(const FString&K,const FString&A,const FString&M,const FString&Algo,const TArray<FString>&S){FTapTapLogin::InjectTokenForTest(K,A,M,Algo,S);}
 #endif

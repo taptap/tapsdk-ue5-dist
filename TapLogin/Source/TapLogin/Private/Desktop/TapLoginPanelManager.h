@@ -24,24 +24,16 @@ public:
 	 * @param ClientID TapTap 应用 ClientID
 	 * @param ScopeStrings 权限字符串数组
 	 * @param OnClose 面板关闭回调
-	 * @param OnWebLogin 网页登录按钮回调
 	 * @param OnAuthSuccess QR 码认证成功回调
 	 */
 	void ShowPanel(
 		const FString& ClientID,
 		const TArray<FString>& ScopeStrings,
 		FOnLoginPanelClose OnClose,
-		FOnLoginPanelWebLogin OnWebLogin,
 		FOnLoginPanelAuthSuccess OnAuthSuccess);
 
 	/** 关闭面板 */
 	void ClosePanel();
-
-	/** 通知面板 Web 登录失败 */
-	void OnWebLoginFailed();
-
-	/** 显示 Web 登录取消 Toast */
-	void ShowWebLoginCancelledToast();
 
 	/** 面板是否正在显示 */
 	bool IsPanelShowing() const;

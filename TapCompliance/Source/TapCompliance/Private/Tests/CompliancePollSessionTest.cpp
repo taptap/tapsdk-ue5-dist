@@ -66,6 +66,7 @@ bool FCompliancePollSessionIsolationTest::RunTest(const FString&)
 	State.CurrentPlayableResult.RemainTime = 900;
 	State.RemainSeconds.Set(900);
 	Poll.StartUp(120);
+	Poll.bHeartbeatInFlight = true;
 
 	FPlayableResult StaleResult;
 	StaleResult.RemainTime = 300;
@@ -87,17 +88,21 @@ bool FCompliancePollSessionIsolationTest::RunTest(const FString&)
 	TestEqual(TEXT("Old token expiry must not clear B's token"), State.Verification.ComplianceToken, FString(TEXT("current-session-token")));
 	TestEqual(TEXT("Old failures must not mutate remaining time"), State.RemainSeconds.GetValue(), 900);
 	TestEqual(TEXT("Old responses must not dispatch exit/restriction/error events"), Events, 0);
+	TestTrue(TEXT("Old responses must not release B's in-flight heartbeat"), Poll.bHeartbeatInFlight);
 
 	FPlayableResult CurrentResult;
 	CurrentResult.RemainTime = 600;
 	auto Current = Poll.CreateHeartbeatCallback(State.CurrentUserId, State.CurrentSessionId);
 	Current(true, CurrentResult, FComplianceError());
+	TestFalse(TEXT("Current response releases the in-flight heartbeat"), Poll.bHeartbeatInFlight);
 	TestEqual(TEXT("Current heartbeat still updates remaining time"), State.RemainSeconds.GetValue(), 600);
 	TestEqual(TEXT("Current heartbeat still updates playable state"), State.CurrentPlayableResult.RemainTime, 600);
 
 	// A new polling lifetime must invalidate requests even if both identity strings match.
 	auto BeforeRestart = Poll.CreateHeartbeatCallback(State.CurrentUserId, State.CurrentSessionId);
+	Poll.bHeartbeatInFlight = true;
 	Poll.StartUp(120);
+	TestFalse(TEXT("Restart allows the new session to send heartbeats"), Poll.bHeartbeatInFlight);
 	BeforeRestart(false, FPlayableResult(), Expired);
 	TestTrue(TEXT("Repeated StartUp invalidates the previous lifetime"), Poll.IsRunning());
 	TestEqual(TEXT("Same-identity restart preserves the current user"), State.CurrentUserId, UserB);

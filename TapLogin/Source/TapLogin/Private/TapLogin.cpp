@@ -10,9 +10,6 @@
 #include "Internal/Http/TapHttp.h"
 #include "Internal/Http/TapHttpTime.h"
 #include "Platform/ITapLoginPlatform.h"
-#if PLATFORM_WINDOWS || PLATFORM_MAC || PLATFORM_LINUX
-#include "Desktop/TapDeepLinkHandler.h"
-#endif
 
 
 // 初始化静态成员
@@ -85,13 +82,6 @@ void FTapTapLogin::Initialize()
 	UE_LOG(LogTapLogin, Log, TEXT("TapLogin initialized: %s"), bIsInitialized ? TEXT("true") : TEXT("false"));
 	UE_LOG(LogTapLogin, Log, TEXT("========================================"));
 }
-
-#if PLATFORM_WINDOWS
-void FTapLoginInternal::HandleWindowsDeepLinkURL(const FString& URL)
-{
-	FTapDeepLinkHandler::Get().HandleURL(URL);
-}
-#endif
 
 bool FTapTapLogin::IsInitialized()
 {
@@ -301,7 +291,7 @@ void FTapTapLogin::InjectTokenForTest(
 {
 	// 测试场景下绕开 Initialize():
 	//   已经手动注入完整 MAC token (kid+mac_key+algo)，BuildAuthorizationHeader
-	//   只用这些字段，不需要 Initialize 干的 LoadLoginState / DeepLink 等。
+	//   只用这些字段，不需要 Initialize 干的 LoadLoginState / Token refresh 等。
 	if (!PlatformImpl.IsValid())
 	{
 		UE_LOG(LogTapLogin, Warning,

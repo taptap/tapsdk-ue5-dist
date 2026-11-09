@@ -23,7 +23,8 @@ FCompliancePoll& FCompliancePoll::Get()
 	return Instance;
 }
 
-FCompliancePoll::FCompliancePoll()
+FCompliancePoll::FCompliancePoll(FTSTicker& InTicker)
+	: Ticker(InTicker)
 {
 	BindAppLifecycle();
 }
@@ -48,6 +49,7 @@ void FCompliancePoll::StartUp(int32 InIntervalSec)
 
 	bRunning = true;
 	bPaused  = false;
+	bHeartbeatInFlight = false;
 
 	UE_LOG(LogTapCompliance, Log, TEXT("[Poll] Start, interval=%d sec"), IntervalSec);
 
@@ -61,6 +63,7 @@ void FCompliancePoll::Logout()
 	UE_LOG(LogTapCompliance, Log, TEXT("[Poll] Logout"));
 	bRunning = false;
 	bPaused  = false;
+	bHeartbeatInFlight = false;
 	StopHeartbeatTicker();
 	StopCountdownTicker();
 	FComplianceState::Get().RemainSeconds.Set(TapComplianceConst::AGE_LIMIT_UNKNOWN);
@@ -83,7 +86,6 @@ void FCompliancePoll::Resume()
 	EnsureCountdownTicker();
 	// 立即触发一次心跳同步，再按周期排
 	TickHeartbeatOnce();
-	ScheduleHeartbeat(IntervalSec);
 }
 
 // =============================================================================
@@ -93,30 +95,43 @@ void FCompliancePoll::Resume()
 void FCompliancePoll::ScheduleHeartbeat(int32 InIntervalSec)
 {
 	StopHeartbeatTicker();
-	const float Period = static_cast<float>(InIntervalSec > 0 ? InIntervalSec : 1);
-	HeartbeatHandle = FTSTicker::GetCoreTicker().AddTicker(
+	if (!bRunning || bPaused) return;
+	int32 DelaySec = FMath::Max(1, InIntervalSec);
+	const int32 Remain = FComplianceState::Get().RemainSeconds.GetValue();
+	if (Remain >= 0 && Remain < DelaySec)
+	{
+		// +1 避免整数秒边界提前判定；本地倒计时归零仍会立即触发复核。
+		DelaySec = Remain + 1;
+	}
+	const float Period = static_cast<float>(DelaySec);
+	HeartbeatHandle = Ticker.AddTicker(
 		FTickerDelegate::CreateLambda(
 			[this](float /*DeltaTime*/) -> bool
 			{
+				HeartbeatHandle.Reset();
 				if (!bRunning || bPaused)
 				{
 					return false; // 取消 ticker
 				}
 				TickHeartbeatOnce();
-				return true; // 继续
+				return false; // 完成复核后重新调度
 			}),
 		Period);
 }
 
 void FCompliancePoll::TickHeartbeatOnce()
 {
+	if (!bRunning || bPaused || bHeartbeatInFlight) return;
+
 	const FString UserId    = FComplianceState::Get().CurrentUserId;
 	const FString SessionId = FComplianceState::Get().CurrentSessionId;
 	if (UserId.IsEmpty())
 	{
 		UE_LOG(LogTapCompliance, Warning, TEXT("[Poll] Heartbeat skipped: no userId"));
+		ScheduleHeartbeat(IntervalSec);
 		return;
 	}
+	StopHeartbeatTicker();
 
 	// 对齐 Android PlayLogModel.checkUserState (PlayLogModel.kt:24): policy_model=local +
 	// active=time_range 时本地直接判, 不发心跳. Step3 入口同样判一次, 此处保证轮询不绕过.
@@ -128,6 +143,14 @@ void FCompliancePoll::TickHeartbeatOnce()
 		return;
 	}
 
+	bHeartbeatInFlight = true;
+#if WITH_DEV_AUTOMATION_TESTS
+	if (SendHeartbeatForTest)
+	{
+		SendHeartbeatForTest(CreateHeartbeatCallback(UserId, SessionId));
+		return;
+	}
+#endif
 	FComplianceNetwork::Heartbeat(UserId, SessionId, CreateHeartbeatCallback(UserId, SessionId));
 }
 
@@ -143,6 +166,7 @@ FComplianceNetwork::FOnPlayable FCompliancePoll::CreateHeartbeatCallback(const F
 				return;
 			}
 
+			bHeartbeatInFlight = false;
 			if (bSuccess)
 			{
 				HandlePlayableUpdate(Result);
@@ -242,11 +266,8 @@ void FCompliancePoll::HandlePlayableUpdate(const FPlayableResult& Result)
 		return;
 	}
 
-	// 剩余时间不足一个完整心跳周期 → 缩短下一轮
-	if (Remain <= IntervalSec)
-	{
-		ScheduleHeartbeat(Remain + 1);
-	}
+	// 每次完成后重新计算等待时间；额度延长时恢复正常心跳周期。
+	ScheduleHeartbeat(IntervalSec);
 }
 
 void FCompliancePoll::StopHeartbeatTicker()
@@ -265,7 +286,7 @@ void FCompliancePoll::StopHeartbeatTicker()
 void FCompliancePoll::EnsureCountdownTicker()
 {
 	StopCountdownTicker();
-	CountdownHandle = FTSTicker::GetCoreTicker().AddTicker(
+	CountdownHandle = Ticker.AddTicker(
 		FTickerDelegate::CreateLambda(
 			[this](float /*DeltaTime*/) -> bool
 			{
@@ -277,7 +298,11 @@ void FCompliancePoll::EnsureCountdownTicker()
 				const int32 Cur = S.RemainSeconds.GetValue();
 				if (Cur > 0)
 				{
-					S.RemainSeconds.Decrement();
+					if (S.RemainSeconds.Decrement() == 0)
+					{
+						UE_LOG(LogTapCompliance, Log, TEXT("[Poll] Countdown expired, recheck playable state"));
+						TickHeartbeatOnce();
+					}
 				}
 				return true;
 			}),

@@ -4,6 +4,8 @@
 
 #include "CoreMinimal.h"
 #include "Dom/JsonObject.h"
+#include "HAL/Runnable.h"
+#include "HAL/RunnableThread.h"
 
 /**
  * JSON file-based key-value persistence storage.
@@ -13,14 +15,19 @@
  *   FTapPrefs Prefs;
  *   Prefs.Init(TEXT("MyModule/my_storage.json"));  // relative to ProjectSavedDir
  */
-class TAPCORE_API FTapPrefs
+class TAPCORE_API FTapPrefs : private FRunnable
 {
 public:
 	FTapPrefs();
 	~FTapPrefs();
 
 	/** Initialize with a path relative to ProjectSavedDir. Creates parent directories if needed. */
-	void Init(const FString& RelativePath);
+	void Init(const FString& RelativePath, bool bPrivateFile = false, const FString& MachineFingerprint = TEXT(""));
+	bool IsReady() const;
+	/** True only when loading and all pending writes have completed. */
+	bool IsPersisted();
+	const FString& GetFilePath() const { return FilePath; }
+	bool WasInvalidated() const;
 
 	FString GetString(const FString& Key, const FString& Default = TEXT("")) const;
 	int64 GetInt64(const FString& Key, int64 Default = 0) const;
@@ -31,9 +38,25 @@ public:
 	void Save();
 
 private:
-	void Load();
+	virtual bool Init() override { return true; }
+	bool Load();
+	void Retry();
+	void StopWorker();
+	virtual uint32 Run() override;
 
 	TSharedPtr<FJsonObject> Data;
 	FString FilePath;
 	mutable FCriticalSection Lock;
+	TSet<FString> DirtyKeys;
+	TSet<FString> RemovedKeys;
+	bool bClearPending = false;
+	bool bReady = false;
+	bool bPrivate = false;
+	FString Fingerprint;
+	bool bInvalidated = false;
+	FCriticalSection SaveLock;
+	FCriticalSection WorkerLock;
+	FEvent* Wake = nullptr;
+	FRunnableThread* Worker = nullptr;
+	TAtomic<bool> bStopping{false};
 };

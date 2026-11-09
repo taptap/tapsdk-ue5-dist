@@ -4,6 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "Containers/Ticker.h"
+#include "Internal/Http/TapHttpRequest.h"
 
 #if PLATFORM_WINDOWS || PLATFORM_MAC || PLATFORM_LINUX
 
@@ -83,6 +84,12 @@ public:
 	const FTapQRCodeData& GetQRCodeData() const { return QRCodeData; }
 
 private:
+#if WITH_DEV_AUTOMATION_TESTS
+	friend struct FTapDesktopLoginTestAccess;
+#endif
+	uint64 SessionGeneration = 0;
+	FTapHttpRequestCompleteDelegate MakeQRCodeCallback(FOnQRCodeReady OnReady);
+	FTapHttpRequestCompleteDelegate MakePollCallback();
 	FTapQRCodeData QRCodeData;
 	bool bPolling;
 	bool bPollRequestInFlight;

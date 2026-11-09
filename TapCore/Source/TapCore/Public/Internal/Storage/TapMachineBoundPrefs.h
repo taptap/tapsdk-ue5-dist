@@ -21,7 +21,11 @@ class TAPCORE_API FTapMachineBoundPrefs
 {
 public:
 	/** Initialize with a path relative to ProjectSavedDir. */
-	void Init(const FString& RelativePath);
+	void Init(const FString& RelativePath, bool bPrivateFile = false);
+	bool EnsureReady();
+	bool IsPersisted() { return Prefs.IsPersisted(); }
+	const FString& GetFilePath() const { return Prefs.GetFilePath(); }
+	static FString ComputeFingerprint();
 
 	FString GetString(const FString& Key, const FString& Default = TEXT("")) const;
 	int64 GetInt64(const FString& Key, int64 Default = 0) const;
@@ -32,12 +36,9 @@ public:
 	void Save();
 
 	/** True if Init() detected a machine mismatch and cleared the cache. */
-	bool WasInvalidated() const { return bWasInvalidated; }
+	bool WasInvalidated() const { return Prefs.WasInvalidated(); }
 
 private:
-	static FString ComputeFingerprint();
-
 	FTapPrefs Prefs;
 	FString Fingerprint;
-	bool bWasInvalidated = false;
 };

@@ -13,8 +13,9 @@ class FTapMachineBoundPrefs;
 /**
  * Desktop 合规模块本地持久化 (基于 FTapMachineBoundPrefs)
  *
- * 存储后端：单个 FTapMachineBoundPrefs KV 文件
- *   <ProjectSavedDir>/TapCompliance/<clientId>/cache.json
+ * 存储后端：按用户分开的 FTapMachineBoundPrefs KV 文件
+ *   <ProjectSavedDir>/TapCompliance/<clientId>/config.json       公共实名配置
+ *   <ProjectSavedDir>/TapCompliance/<clientId>/users/<hash>.json 用户数据
  *
  * Key 布局：
  *   realname_config                 ← 序列化 FRealNameConfigResult JSON
@@ -24,8 +25,13 @@ class FTapMachineBoundPrefs;
  * 两层隔离：
  *   - 机器：FTapMachineBoundPrefs 内部写入 tap_machine_fp; 读时若指纹不匹配
  *           (例如游戏目录拷到别机器), 整个 KV 文件被清空, 上层重新走 server 拉取.
- *   - 用户：userId 经 md5 哈希后挂在 key 上, 不同账号自然走不同 key,
- *           DeleteVerification/DeleteUserAntiConfig 只删该 userId 对应 key.
+ *   - 用户：userId 经 md5 哈希作为文件名, 不同账号读写不同文件;
+ *           删除认证或配置时保留用户文件, 防止再次导入旧缓存.
+ *
+ * 新文件不存在时, 从同机器的旧 cache.json 只读迁移对应键, 不修改旧文件.
+ * 新文件已存在时不再迁移, 即使其数据已被清空或无法解析.
+ * 旧文件忙或损坏时不创建新文件；退出不等待迁移。保存 false 表示尚未落盘。
+ * 已接受的修改由模块持有至重试成功；退出失效标记保留至新权威值成功保存。
  *
  * 历史路径 <ClientId>/verification_v2/{hash}.json 等遗留文件不再读写,
  * 升级后会以孤儿态留在磁盘上, 不影响业务 (cache miss 自然 refetch).
@@ -63,12 +69,10 @@ public:
 	static void MarkFirstPassTipShown(const FString& UserId);
 
 private:
-	/**
-	 * 进程内单例 FTapMachineBoundPrefs.
-	 * 首次访问时按当前 ClientId 懒加载. ClientId 在 SDK Init 阶段写入 FComplianceState,
-	 * 之后不变, 因此单例缓存 ClientId 校验后可安全复用.
-	 */
-	static FTapMachineBoundPrefs& GetPrefs();
+	static TSharedPtr<FTapMachineBoundPrefs> LoadPrefs(
+		const FString& FileName, const TArray<FString>& LegacyKeys);
+	static TSharedPtr<FTapMachineBoundPrefs> LoadUserPrefs(const FString& UserId);
+	static TSharedPtr<FTapMachineBoundPrefs> LoadConfigPrefs();
 
 	/** userId → 32 位小写 MD5; 空 userId 统一映射成 "anonymous" 槽 */
 	static FString HashUserId(const FString& UserId);

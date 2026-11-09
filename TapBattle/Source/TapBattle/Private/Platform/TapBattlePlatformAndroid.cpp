@@ -346,10 +346,27 @@ FTapBattlePlatformAndroid::FTapBattlePlatformAndroid() = default;
 
 FTapBattlePlatformAndroid::~FTapBattlePlatformAndroid()
 {
+	FTapTapSDK::RemoveInitCallback(this);
 	TapBattleAndroidBridge::UnregisterNotificationCallback();
 }
 
 void FTapBattlePlatformAndroid::Initialize()
+{
+	if (!bInitCallbackRegistered)
+	{
+		bInitCallbackRegistered = true;
+		FTapTapSDK::AddInitCallback(this);
+	}
+
+	// InitTask completion does not imply that the asynchronous native SDK init is complete.
+	// Also register synchronously when already ready, before Connect can emit notifications.
+	if (FTapTapSDK::IsInitialized())
+	{
+		OnInitSuccess();
+	}
+}
+
+void FTapBattlePlatformAndroid::OnInitSuccess()
 {
 	if (bInitialized)
 	{
@@ -369,11 +386,18 @@ void FTapBattlePlatformAndroid::Initialize()
 
 	if (!bInitialized)
 	{
-		UE_LOG(LogTapBattle, Warning, TEXT("[TapBattle][Android] Initialize failed"));
+		UE_LOG(LogTapBattle, Warning, TEXT("[TapBattle][Android] Notification registration failed; Connect will retry"));
 		return;
 	}
 
 	UE_LOG(LogTapBattle, Log, TEXT("[TapBattle][Android] Initialize complete"));
+}
+
+void FTapBattlePlatformAndroid::OnInitFail(int32 ErrorCode, const FString& ErrorMessage)
+{
+	TapBattleAndroidBridge::UnregisterNotificationCallback();
+	bInitialized = false;
+	UE_LOG(LogTapBattle, Warning, TEXT("[TapBattle][Android] Waiting for SDK initialization retry: code=%d, message=%s"), ErrorCode, *ErrorMessage);
 }
 
 bool FTapBattlePlatformAndroid::IsInitialized() const
@@ -555,6 +579,13 @@ void FTapBattlePlatformAndroid::FreeRandomNumberGenerator(int64 ObjId)
 
 void FTapBattlePlatformAndroid::Connect(const FTapOnBattlePlayerIdResult& OnSuccess, const FTapOnBattleError& OnError)
 {
+	Initialize();
+	if (!bInitialized)
+	{
+		FireError(OnError, TapBattleResultCode::ERROR_NOT_INIT_OR_LOGIN, TEXT("TapBattle notification registration is not ready; retry Connect"));
+		return;
+	}
+
 	TWeakPtr<FTapBattlePlatformAndroid> WeakSelf = AsShared();
 	TapBattleAndroidBridge::Connect([WeakSelf, OnSuccess, OnError](bool bHasResult, const FString& Raw)
 	{

@@ -13,13 +13,14 @@
  * Desktop 合规模块：心跳轮询 + 1s 倒计时
  *
  * 启动后维护两个 ticker：
- *   - HeartbeatTicker: 周期 = policy.heartbeat_interval (默认 120s)，
+ *   - HeartbeatTicker: 间隔不超过 policy.heartbeat_interval (默认 120s)，
  *     每次发 /anti-addiction/v1/heartbeat，刷新 RemainSeconds 与 PlayableResult。
- *   - CountdownTicker: 1s，递减 RemainSeconds，提供给 GetUserRemainTime 同步查询。
+ *     首次及后续调度均按剩余时间缩短；异步请求完成后才安排下一次。
+ *   - CountdownTicker: 1s，递减 RemainSeconds，归零时立即复核可玩性。
  *
  * 心跳结果分支:
- *   RemainTime > interval     → 等下一轮
- *   1 <= RemainTime <= interval → 缩短下一轮 ticker 周期到 RemainTime+1
+ *   RemainTime >= interval    → 等下一轮
+ *   1 <= RemainTime < interval → 缩短下一轮 ticker 周期到 RemainTime+1
  *   RemainTime <= 0           → 停 ticker，发 PERIOD_RESTRICT(1030) 并弹 HealthMinorTimeLimit
  *   token expired             → Logout + EXITED(1000)
  *   其它异常                  → INVALID_CLIENT_OR_NETWORK_ERROR(1200) 并停 ticker
@@ -52,7 +53,8 @@ public:
 
 private:
 	friend class FCompliancePollSessionIsolationTest;
-	FCompliancePoll();
+	friend class FCompliancePollDeadlineTest;
+	explicit FCompliancePoll(FTSTicker& InTicker = FTSTicker::GetCoreTicker());
 	~FCompliancePoll();
 
 	FCompliancePoll(const FCompliancePoll&) = delete;
@@ -67,7 +69,7 @@ private:
 	/** 把 (心跳成功 / 本地计算) 拿到的可玩态写入 state, 并按 RemainTime 决定停 / 续 / 弹窗 */
 	void HandlePlayableUpdate(const struct FPlayableResult& Result);
 
-	/** 添加心跳 ticker，按 IntervalSec 周期 */
+	/** 添加一次心跳 ticker，按当前剩余时间缩短等待 */
 	void ScheduleHeartbeat(int32 IntervalSec);
 
 	/** 添加 / 重置 1s 倒计时 ticker */
@@ -83,10 +85,15 @@ private:
 	void UnbindAppLifecycle();
 
 private:
+	FTSTicker& Ticker;
+#if WITH_DEV_AUTOMATION_TESTS
+	TFunction<void(FComplianceNetwork::FOnPlayable)> SendHeartbeatForTest;
+#endif
 	// Game-thread only, like the lifecycle methods and HTTP completion callbacks.
 	uint64 SessionGeneration = 0;
 	bool bRunning = false;
 	bool bPaused  = false;
+	bool bHeartbeatInFlight = false;
 
 	int32 IntervalSec = 120;
 

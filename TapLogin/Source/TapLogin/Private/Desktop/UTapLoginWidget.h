@@ -12,6 +12,7 @@ class UTextBlock;
 class UButton;
 class UTexture2D;
 class UWidgetAnimation;
+struct FSlateDynamicImageBrush;
 
 // Desktop: 需要完整类型定义 (UHT 生成的构造函数需要 TUniquePtr 的完整类型)
 // Non-desktop: 仅 forward declare 用于委托签名
@@ -26,20 +27,18 @@ enum class ETapQRCodeStatus : uint8;
 
 // 委托声明 (unconditional - delegate template 不需要完整类型定义)
 DECLARE_DELEGATE(FOnLoginPanelClose);
-DECLARE_DELEGATE_OneParam(FOnLoginPanelWebLogin, const TArray<FString>& /*ScopeStrings*/);
-DECLARE_DELEGATE_OneParam(FOnLoginPanelAuthSuccess, const FTapTokenData& /*TokenData*/);
+DECLARE_DELEGATE_TwoParams(FOnLoginPanelAuthSuccess, const FTapTokenData& /*TokenData*/, bool /*bWebLogin*/);
 
 /**
  * UMG 登录面板 (800x480)
  * 参照 Unity LoginPanel.prefab: 左侧 QR 码扫码 + 右侧网页浏览器登录
  * 使用 BindWidget + Blueprint 模式: C++ 管理业务逻辑, Blueprint 管理布局和样式
  *
- * UI 状态 (5 种):
+ * UI 状态:
  *   1. 初始: QR 码显示, 状态文字隐藏
  *   2. QR 扫码成功: "扫码成功 / 请在手机上确认"
- *   3. QR 被拒: "您已取消此次登录，请重新扫码" + 自动刷新 QR
- *   4. Web 登录中: "正在登录中，请稍后"
- *   5. Web 登录失败: "登录失败，请重新点击打开网页进行授权"
+ *   3. QR 被拒: "您已取消此次登录，请重新扫码" + 显示刷新按钮
+ *   4. WebBtn: 刷新 QR 码, 用 qrcode_url 打开浏览器, 后台继续轮询 device_code
  *
  * 注: 仅在 Desktop (Win/Mac/Linux) 平台有实际实现,
  *     移动平台提供空实现以满足 UHT 生成代码编译需求
@@ -57,14 +56,7 @@ public:
 		const FString& InClientID,
 		const TArray<FString>& InScopeStrings,
 		FOnLoginPanelClose InOnClose,
-		FOnLoginPanelWebLogin InOnWebLogin,
 		FOnLoginPanelAuthSuccess InOnAuthSuccess);
-
-	/** 外部通知 Web 登录失败 (重置按钮状态 + 显示失败文字) */
-	void NotifyWebLoginFailed();
-
-	/** 显示 Web 登录取消 Toast */
-	void ShowWebLoginCancelledToast();
 
 protected:
 	virtual void NativeConstruct() override;
@@ -115,8 +107,13 @@ private:
 
 #if PLATFORM_WINDOWS || PLATFORM_MAC || PLATFORM_LINUX
 	// QR 码回调
-	void RequestQRCode();
-	void OnQRCodeReady(bool bSuccess, const FTapQRCodeData& Data);
+#if WITH_DEV_AUTOMATION_TESTS
+	friend struct FTapDesktopLoginTestAccess;
+	TFunction<void(const FString&)> OpenBrowserForTest;
+	TFunction<TSharedPtr<FSlateDynamicImageBrush>(const FString&, int32)> CreateQRBrushForTest;
+#endif
+	void RequestQRCode(bool bOpenBrowserOnReady = false);
+	void OnQRCodeReady(uint64 RequestId, bool bSuccess, const FTapQRCodeData& Data);
 	void OnQRCodeStatusChanged(ETapQRCodeStatus Status);
 	void OnQRCodeAuthSuccess(const FTapTokenData& TokenData);
 
@@ -131,10 +128,13 @@ private:
 	FString ClientID;
 	TArray<FString> ScopeStrings;
 	ETapQRCodeStatus LastQRStatus = ETapQRCodeStatus::Pending;
+	uint64 QRRequestGeneration = 0;
+	bool bQRRequestInFlight = false;
+	bool bOpenBrowserWhenQRReady = false;
+	bool bWebLoginSession = false;
 
 	// 委托
 	FOnLoginPanelClose OnClose;
-	FOnLoginPanelWebLogin OnWebLogin;
 	FOnLoginPanelAuthSuccess OnAuthSuccess;
 #endif
 };

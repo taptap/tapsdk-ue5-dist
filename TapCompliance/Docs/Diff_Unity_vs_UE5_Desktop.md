@@ -33,7 +33,7 @@
 | 平台分发 | `ComplianceJobManager`（反射查类名） | `FTapCompliancePlatformFactory`（工厂模式） | ✓ 工厂比反射稳 |
 | 全局状态 | `TapTapComplianceManager`（静态字段散落） | `FComplianceState`（单例 + `FCriticalSection`） | ✓ UE5 加锁，多线程安全 |
 | 编排层 | `BaseComplianceWorker.StartUp` | `FComplianceAuthFlow::StartUp` | ✓ 三步流程对齐 |
-| 实名缓存 | `Verification`（双层 v2 文件） | `FComplianceState.Verification` + `FCompliancePersistence` | ✓ UE5 用机器绑定 KV |
+| 实名缓存 | `Verification`（按用户分文件） | `FComplianceState.Verification` + `FCompliancePersistence`（按用户分文件） | UE5 保留机器绑定，公共配置独立保存 |
 | 心跳 | `CompliancePoll`（`MonoBehaviour`） | `FCompliancePoll`（`FTSTicker`） | ✓ 桌面端 FTSTicker 更可靠 |
 | Network | `Network`（5 端点） | `FComplianceNetwork`（同 5 端点） | ✓ 路径/参数完全对齐 |
 | UI | 4 个 Controller | 8 个业务 WBP + 纯 Slate Loading/Toast + `FTapCompliancePanelManager` | ✓ UE5 按业务面板拆分，通用提示不依赖 WBP |
@@ -393,6 +393,12 @@ return V < 0 ? TapComplianceConst::AGE_LIMIT_UNKNOWN : V;   // -1 时返回 -1
 6. **`AuthReviewing(Waiting/Failed)` 弹窗专门化**：Unity 是复用通用 `HealthPaymentPanel` 弹"认证中"提示，UE5 拆出独立面板，更清晰。
 7. **`ComplianceAuthFlow.Finish` 集中埋点**：所有终态码统一在 `Finish` 里 TrackSuccess/Failure/Cancel，Unity 是散在 `Startup` switch 里。
 8. **统一 Toast 使用纯 Slate**：当前成功、失败和首次通过提示不再依赖额外 WBP 资产。
+
+合规缓存按用户保存于 `Saved/TapCompliance/<ClientID>/users/<md5(userId)>.json`，
+包含该用户认证、用户配置和首次提示标记；公共实名配置保存在同目录的 `config.json`。
+每份文件仍使用机器指纹校验。新文件首次创建时，只读迁移同机器旧 `cache.json` 中的对应键；
+不修改旧文件，新文件已存在时不再导入，避免退出清理后恢复旧认证。
+这消除了不同用户整份覆盖共享合规文件的问题；公共配置并发写、同账号多开和中断写入保护不在此调整范围内。
 
 ---
 

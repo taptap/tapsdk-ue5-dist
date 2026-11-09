@@ -19,6 +19,7 @@
 #include "Containers/Ticker.h"
 #include "UObject/ConstructorHelpers.h"
 #include "Engine/Texture2D.h"
+#include "HAL/PlatformProcess.h"
 
 static const float QRCodeSize = 160.0f;
 
@@ -55,13 +56,11 @@ void UTapLoginWidget::Init(
 	const FString& InClientID,
 	const TArray<FString>& InScopeStrings,
 	FOnLoginPanelClose InOnClose,
-	FOnLoginPanelWebLogin InOnWebLogin,
 	FOnLoginPanelAuthSuccess InOnAuthSuccess)
 {
 	ClientID = InClientID;
 	ScopeStrings = InScopeStrings;
 	OnClose = InOnClose;
-	OnWebLogin = InOnWebLogin;
 	OnAuthSuccess = InOnAuthSuccess;
 }
 
@@ -125,6 +124,11 @@ void UTapLoginWidget::NativeConstruct()
 
 void UTapLoginWidget::NativeDestruct()
 {
+	++QRRequestGeneration;
+	bQRRequestInFlight = false;
+	bOpenBrowserWhenQRReady = false;
+	bWebLoginSession = false;
+
 	if (UWorld* World = GetWorld())
 	{
 		World->GetTimerManager().ClearTimer(ToastTimerHandle);
@@ -200,26 +204,69 @@ void UTapLoginWidget::HideToast()
 // QR 码
 // =============================================================================
 
-void UTapLoginWidget::RequestQRCode()
+void UTapLoginWidget::RequestQRCode(bool bOpenBrowserOnReady)
 {
 	if (!QRService) return;
+	if (bOpenBrowserOnReady && !bOpenBrowserWhenQRReady)
+	{
+		bOpenBrowserWhenQRReady = true;
+		ShowToast(ToastLoading);
+	}
+	if (bQRRequestInFlight) return;
 
+	bQRRequestInFlight = true;
+	bWebLoginSession = false;
 	LastQRStatus = ETapQRCodeStatus::Pending;
+	QRService->StopPolling();
+	if (QRCodeImage) QRCodeImage->SetVisibility(ESlateVisibility::Hidden);
+	if (RefreshBtn) RefreshBtn->SetVisibility(ESlateVisibility::Collapsed);
+
+	const uint64 RequestId = ++QRRequestGeneration;
 	FString Scopes = FString::Join(ScopeStrings, TEXT(","));
+	TWeakObjectPtr<UTapLoginWidget> WeakThis(this);
 	QRService->RequestQRCode(ClientID, Scopes,
-		FOnQRCodeReady::CreateUObject(this, &UTapLoginWidget::OnQRCodeReady));
+		FOnQRCodeReady::CreateLambda([WeakThis, RequestId](bool bSuccess, const FTapQRCodeData& Data)
+		{
+			if (UTapLoginWidget* Self = WeakThis.Get())
+			{
+				Self->OnQRCodeReady(RequestId, bSuccess, Data);
+			}
+		}));
 }
 
-void UTapLoginWidget::OnQRCodeReady(bool bSuccess, const FTapQRCodeData& Data)
+void UTapLoginWidget::OnQRCodeReady(uint64 RequestId, bool bSuccess, const FTapQRCodeData& Data)
 {
-	if (!bSuccess)
+	if (RequestId != QRRequestGeneration)
 	{
-		UE_LOG(LogTapLogin, Error, TEXT("[Panel] QR code request failed"));
+		return;
+	}
+	bQRRequestInFlight = false;
+
+	if (!bSuccess || Data.DeviceCode.IsEmpty() || Data.QRCodeUrl.IsEmpty())
+	{
+		UE_LOG(LogTapLogin, Warning, TEXT("[Panel] QR code request failed or returned invalid data"));
+		if (QRCodeImage) QRCodeImage->SetVisibility(ESlateVisibility::Hidden);
+		if (RefreshBtn) RefreshBtn->SetVisibility(ESlateVisibility::Visible);
+		if (bOpenBrowserWhenQRReady)
+		{
+			bOpenBrowserWhenQRReady = false;
+			ShowToast(ToastFail);
+		}
 		return;
 	}
 
 	// 生成 QR 码纹理
-	TSharedPtr<FSlateDynamicImageBrush> QRBrush = FTapQRCodeGenerator::GenerateQRBrush(Data.QRCodeUrl, (int32)QRCodeSize);
+	TSharedPtr<FSlateDynamicImageBrush> QRBrush;
+#if WITH_DEV_AUTOMATION_TESTS
+	if (CreateQRBrushForTest)
+	{
+		QRBrush = CreateQRBrushForTest(Data.QRCodeUrl, (int32)QRCodeSize);
+	}
+	else
+#endif
+	{
+		QRBrush = FTapQRCodeGenerator::GenerateQRBrush(Data.QRCodeUrl, (int32)QRCodeSize);
+	}
 	UTexture2D* NewTexture = QRBrush.IsValid() ? Cast<UTexture2D>(QRBrush->GetResourceObject()) : nullptr;
 	if (NewTexture && QRCodeImage)
 	{
@@ -231,10 +278,27 @@ void UTapLoginWidget::OnQRCodeReady(bool bSuccess, const FTapQRCodeData& Data)
 	if (QRCodeImage) QRCodeImage->SetVisibility(ESlateVisibility::Visible);
 	if (RefreshBtn) RefreshBtn->SetVisibility(ESlateVisibility::Collapsed);
 
+	bWebLoginSession = bOpenBrowserWhenQRReady;
+	bOpenBrowserWhenQRReady = false;
+
 	// 开始轮询
 	QRService->StartPolling(ClientID,
 		FOnQRCodeStatusChanged::CreateUObject(this, &UTapLoginWidget::OnQRCodeStatusChanged),
 		FOnQRCodeAuthSuccess::CreateUObject(this, &UTapLoginWidget::OnQRCodeAuthSuccess));
+
+	if (bWebLoginSession)
+	{
+#if WITH_DEV_AUTOMATION_TESTS
+		if (OpenBrowserForTest)
+		{
+			OpenBrowserForTest(Data.QRCodeUrl);
+		}
+		else
+#endif
+		{
+			FPlatformProcess::LaunchURL(*Data.QRCodeUrl, nullptr, nullptr);
+		}
+	}
 }
 
 void UTapLoginWidget::OnQRCodeStatusChanged(ETapQRCodeStatus Status)
@@ -248,7 +312,10 @@ void UTapLoginWidget::OnQRCodeStatusChanged(ETapQRCodeStatus Status)
 		break;
 
 	case ETapQRCodeStatus::Scanned:
-		ShowToast(ToastSuccess);
+		if (!bWebLoginSession)
+		{
+			ShowToast(ToastSuccess);
+		}
 		break;
 
 	case ETapQRCodeStatus::Denied:
@@ -270,7 +337,7 @@ void UTapLoginWidget::OnQRCodeStatusChanged(ETapQRCodeStatus Status)
 void UTapLoginWidget::OnQRCodeAuthSuccess(const FTapTokenData& TokenData)
 {
 	UE_LOG(LogTapLogin, Log, TEXT("[Panel] QR auth success"));
-	OnAuthSuccess.ExecuteIfBound(TokenData);
+	OnAuthSuccess.ExecuteIfBound(TokenData, bWebLoginSession);
 }
 
 // =============================================================================
@@ -279,33 +346,28 @@ void UTapLoginWidget::OnQRCodeAuthSuccess(const FTapTokenData& TokenData)
 
 void UTapLoginWidget::OnCloseClicked()
 {
+	++QRRequestGeneration;
+	bQRRequestInFlight = false;
+	bOpenBrowserWhenQRReady = false;
+	bWebLoginSession = false;
 	if (QRService)
 	{
 		QRService->StopPolling();
+		QRService.Reset();
 	}
 	OnClose.ExecuteIfBound();
 }
 
 void UTapLoginWidget::OnRefreshClicked()
 {
+	if (bQRRequestInFlight) return;
 	if (RefreshBtn) RefreshBtn->SetVisibility(ESlateVisibility::Collapsed);
-	RequestQRCode();
+	RequestQRCode(false);
 }
 
 void UTapLoginWidget::OnWebLoginClicked()
 {
-	ShowToast(ToastLoading);
-	OnWebLogin.ExecuteIfBound(ScopeStrings);
-}
-
-void UTapLoginWidget::NotifyWebLoginFailed()
-{
-	ShowToast(ToastFail);
-}
-
-void UTapLoginWidget::ShowWebLoginCancelledToast()
-{
-	ShowToast(ToastCancel);
+	RequestQRCode(true);
 }
 
 // =============================================================================
@@ -345,7 +407,6 @@ void UTapLoginWidget::Init(
 	const FString& InClientID,
 	const TArray<FString>& InScopeStrings,
 	FOnLoginPanelClose InOnClose,
-	FOnLoginPanelWebLogin InOnWebLogin,
 	FOnLoginPanelAuthSuccess InOnAuthSuccess)
 {
 }
@@ -355,8 +416,6 @@ void UTapLoginWidget::NativeDestruct() { Super::NativeDestruct(); }
 void UTapLoginWidget::OnCloseClicked() {}
 void UTapLoginWidget::OnRefreshClicked() {}
 void UTapLoginWidget::OnWebLoginClicked() {}
-void UTapLoginWidget::NotifyWebLoginFailed() {}
-void UTapLoginWidget::ShowWebLoginCancelledToast() {}
 void UTapLoginWidget::OnIOSBtnHovered() {}
 void UTapLoginWidget::OnIOSBtnUnhovered() {}
 void UTapLoginWidget::OnAndroidBtnHovered() {}

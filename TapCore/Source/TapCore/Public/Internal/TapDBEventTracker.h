@@ -63,6 +63,7 @@ public:
 private:
 #if WITH_DEV_AUTOMATION_TESTS
 	friend class FTapDBCommonPropertiesTypesTest;
+	friend class FTapDeferredInitializationTest;
 #endif
 
 	FTapDBEventTracker();
@@ -94,6 +95,16 @@ private:
 	// Get current language string
 	FString GetSDKLocale() const;
 	FString GetSystemLanguage() const;
+
+	bool TryInit(const FString& InClientID, const FString& InClientToken,
+		ETapRegion Region, bool bInEnableLog, const FString& GameVersion, const FString& Channel,
+		bool bDisableAutoLogDeviceLogin, bool bInOverrideBuiltInParameters, const FString& InitProperties);
+	void DrainPendingCalls();
+	bool DeferUntilReady(TFunction<void()> Call);
+	TArray<TFunction<void()>> PendingCalls;
+	uint64 InitializationGeneration = 0;
+	TFunction<bool()> PendingInitialization;
+	FTSTicker::FDelegateHandle InitTicker;
 
 	// Components
 	TUniquePtr<FTapMachineBoundPrefs> Prefs;

@@ -5,6 +5,7 @@
 #include "Internal/TapDBConstants.h"
 #include "TapCoreModule.h"
 #include "Internal/Storage/TapDeviceId.h"
+#include "Storage/TapEventStorage.h"
 #include "Misc/Guid.h"
 #include "Misc/SecureHash.h"
 #include "HAL/PlatformProcess.h"
@@ -69,6 +70,17 @@ void FTapDBIdentity::Init(FTapMachineBoundPrefs& Prefs)
 
 	// Device ID5 — per-launch unique ID, Windows only (not persisted)
 	DeviceId5 = GenerateDeviceId5();
+
+	const auto& Storage = FTapEventStorage::Get();
+	if (!Storage.GetInstallationId().IsEmpty())
+	{
+		PersistentId = Storage.GetPersistentId();
+		InstallationId = Storage.GetInstallationId();
+		Prefs.Set(TapDBConstants::PREF_PERSISTENT_ID, PersistentId);
+		Prefs.Set(TapDBConstants::PREF_INSTALLATION_ID, InstallationId);
+		Prefs.Save();
+		return;
+	}
 
 	// Persistent ID
 	PersistentId = Prefs.GetString(TapDBConstants::PREF_PERSISTENT_ID);

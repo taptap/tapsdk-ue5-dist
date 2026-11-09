@@ -20,7 +20,6 @@ void FTapLoginPanelManager::ShowPanel(
 	const FString& ClientID,
 	const TArray<FString>& ScopeStrings,
 	FOnLoginPanelClose OnClose,
-	FOnLoginPanelWebLogin OnWebLogin,
 	FOnLoginPanelAuthSuccess OnAuthSuccess)
 {
 	// 如果已经有面板, 先关闭
@@ -67,27 +66,11 @@ void FTapLoginPanelManager::ShowPanel(
 		return;
 	}
 
-	Widget->Init(ClientID, ScopeStrings, OnClose, OnWebLogin, OnAuthSuccess);
+	Widget->Init(ClientID, ScopeStrings, OnClose, OnAuthSuccess);
 	Widget->AddToViewport(1000);
 	LoginWidget = Widget;
 
 	UE_LOG(LogTapLogin, Log, TEXT("[PanelManager] Login panel shown (Blueprint)"));
-}
-
-void FTapLoginPanelManager::OnWebLoginFailed()
-{
-	if (LoginWidget.IsValid())
-	{
-		LoginWidget->NotifyWebLoginFailed();
-	}
-}
-
-void FTapLoginPanelManager::ShowWebLoginCancelledToast()
-{
-	if (LoginWidget.IsValid())
-	{
-		LoginWidget->ShowWebLoginCancelledToast();
-	}
 }
 
 void FTapLoginPanelManager::ClosePanel()

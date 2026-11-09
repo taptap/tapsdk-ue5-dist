@@ -53,6 +53,7 @@ private:
 #if WITH_DEV_AUTOMATION_TESTS
 	friend class FTapEventInitializationTest;
 	friend class FTapOpenlogGameVersionTest;
+	friend class FTapOpenlogDataDirectoryTest;
 #endif
 
 	static bool bInitialized;
@@ -71,7 +72,7 @@ private:
 	/** Collect one-time device / app parameters into CachedCommonJson. */
 	static void CollectGeneralParameters(TSharedRef<class FJsonObject>& OutObj);
 
-	/** Build the full start-config JSON string. */
+	/** Prepare the data directory and build start-config JSON; empty on directory creation failure. */
 	static FString BuildStartConfig(const TSharedRef<class FJsonObject>& CommonObj);
 
 	/** Bind UE lifecycle delegates (foreground/background/exit). */

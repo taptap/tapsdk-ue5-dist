@@ -18,15 +18,17 @@ public:
 	FTapDBEventSender();
 	~FTapDBEventSender();
 
-	void Init(const FString& ClientID, ETapRegion Region);
+	void Init(const FString& ClientID, ETapRegion Region, const FString& CachePath = TEXT(""), bool bPrivateFile = false);
 	void Send(TSharedPtr<FJsonObject> EventData);
 	void Flush();
 	void ClearCache();
 	void Shutdown();
+	/** Historical records keep their original account, properties and IDs. */
+	static void SendHistory(const TArray<TSharedPtr<FJsonObject>>& Events, ETapRegion Region, TFunction<void(bool)> Complete);
 
 private:
-	void LoadEvents();
-	void SaveEvents();
+	bool LoadEvents(bool bUnderLock = false);
+	void SaveEvents(bool bOnlyIfPending = false);
 	bool TrySendBatch();
 	void OnTimerTick();
 	void DoHttpSend(const TArray<TSharedPtr<FJsonObject>>& Batch, int32 Attempt = 0);
@@ -41,6 +43,10 @@ private:
 	bool bIsShuttingDown;
 
 	FCriticalSection QueueLock;
+	FCriticalSection SaveLock;
+	bool bCacheLoaded = false;
+	bool bSavePending = false;
+	bool bPrivate = false;
 	FTSTicker::FDelegateHandle TickerHandle;
 
 	/** In-flight batches keyed by a monotonic BatchId for shutdown recovery */
@@ -49,4 +55,8 @@ private:
 
 	/** Shared flag for HTTP callback safety — prevents use-after-free */
 	TSharedPtr<bool, ESPMode::ThreadSafe> AliveFlag;
+#if WITH_DEV_AUTOMATION_TESTS
+	friend class FTapSharedEventCacheTest;
+	friend class FTapEventInFlightCacheTest;
+#endif
 };

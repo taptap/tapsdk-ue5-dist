@@ -4,10 +4,12 @@
 
 #include "CoreMinimal.h"
 #include "Platform/ITapBattlePlatform.h"
+#include "TapCore.h"
 
 class FTapBattlePlatformAndroid
 	: public ITapBattlePlatform
 	, public TSharedFromThis<FTapBattlePlatformAndroid>
+	, private ITapInitCallback
 {
 public:
 	FTapBattlePlatformAndroid();
@@ -44,7 +46,10 @@ public:
 	virtual void SendCustomMessage(const FString&, int32, const TArray<FString>&, const FTapOnBattleSuccess&, const FTapOnBattleError&) override;
 
 private:
+	virtual void OnInitSuccess() override;
+	virtual void OnInitFail(int32 ErrorCode, const FString& ErrorMessage) override;
 	void HandleNotification(const FString& RawJson);
 
+	bool bInitCallbackRegistered = false;
 	bool bInitialized = false;
 };
